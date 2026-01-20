@@ -40,19 +40,10 @@ impl<'a> Tokenizer<'a> {
     fn tokenize(mut self) -> Vec<Token<'a>> {
         while let Some(c) = self.peek() {
             match c {
+                '#' => self.advance_until_newline(),
                 '/' => {
                     if self.npeek(2) == Some('/') {
-                        self.advance();
-                        self.advance();
-
-                        loop {
-                            match self.peek() {
-                                Some('\n') | None => break,
-                                _ => {
-                                    self.advance();
-                                }
-                            }
-                        }
+                        self.advance_until_newline();
                     } else {
                         // must be the TokenKind::Slash
                         let tokenize_success = self.try_tokenize_operator();
@@ -191,6 +182,17 @@ impl<'a> Tokenizer<'a> {
                 end: self.index,
             },
         });
+    }
+
+    fn advance_until_newline(&mut self) {
+        loop {
+            match self.peek() {
+                Some('\n') | None => break,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
     }
 
     fn push(&mut self, token: Token<'a>) {
@@ -395,12 +397,41 @@ mod tests {
     }
 
     #[test]
-    fn test_singleline_comment() {
+    fn test_slashslash_comment() {
         assert_matches!(
             tokenize("a///+/=0[)!{+)@#}]\nb/a").as_slice(),
             &[
                 Token {
                     kind: TokenKind::Identifier("a"),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Identifier("b"),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Slash,
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Identifier("a"),
+                    ..
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_hashtag_comment() {
+        assert_matches!(
+            tokenize("a/#/+/=0[)!{+)@#}]\nb/a").as_slice(),
+            &[
+                Token {
+                    kind: TokenKind::Identifier("a"),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Slash,
                     ..
                 },
                 Token {
