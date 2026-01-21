@@ -1,4 +1,4 @@
-use crate::Span;
+use crate::{Source, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind<'a> {
@@ -25,19 +25,19 @@ pub enum TokenKind<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token<'a> {
-    kind: TokenKind<'a>,
+pub struct Token<'code> {
+    kind: TokenKind<'code>,
     span: Span,
 }
 
-struct Tokenizer<'a> {
-    code: &'a str,
-    tokens: Vec<Token<'a>>,
+struct Tokenizer<'source, 'code> {
+    source: &'source mut Source<'code>,
+    tokens: Vec<Token<'code>>,
     index: usize,
 }
 
-impl<'a> Tokenizer<'a> {
-    fn tokenize(mut self) -> Vec<Token<'a>> {
+impl<'source, 'code> Tokenizer<'source, 'code> {
+    fn tokenize(mut self) -> Vec<Token<'code>> {
         while let Some(c) = self.peek() {
             match c {
                 '#' => self.advance_until_newline(),
@@ -146,7 +146,7 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        let identifier = &self.code[start..self.index];
+        let identifier = &self.source.code[start..self.index];
         self.push(Token {
             kind: TokenKind::Identifier(identifier),
             span: Span {
@@ -195,7 +195,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn push(&mut self, token: Token<'a>) {
+    fn push(&mut self, token: Token<'code>) {
         self.tokens.push(token);
     }
 
@@ -204,12 +204,18 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn npeek(&self, n: usize) -> Option<char> {
-        self.code.get(self.index..)?.chars().nth(n - 1)
+        self.source.code.get(self.index..)?.chars().nth(n - 1)
     }
 
     fn advance(&mut self) -> Option<char> {
-        let c = self.code.get(self.index..)?.chars().nth(0)?;
+        let c = self.source.code.get(self.index..)?.chars().nth(0)?;
+
         self.index += c.len_utf8();
+
+        if c == '\n' {
+            self.source.newlines.push(self.index);
+        }
+
         Some(c)
     }
 
@@ -220,10 +226,10 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-pub fn tokenize(code: &str) -> Vec<Token<'_>> {
+pub fn tokenize<'a>(source: &mut Source<'a>) -> Vec<Token<'a>> {
     let tokenizer = Tokenizer {
         index: 0,
-        code,
+        source,
         tokens: Vec::new(),
     };
 
@@ -234,12 +240,21 @@ pub fn tokenize(code: &str) -> Vec<Token<'_>> {
 mod tests {
     use std::assert_matches::assert_matches;
 
+    use crate::Source;
+
     use super::*;
+
+    /// A wrapper used for testing to not have to provide a full [`Source`]
+    fn tokenize_str<'code>(code: &'code str) -> Vec<Token<'code>> {
+        let mut code = Source::new(code);
+
+        tokenize(&mut code)
+    }
 
     #[test]
     fn simple_identifier() {
         assert_eq!(
-            tokenize("if"),
+            tokenize_str("if"),
             vec![Token {
                 kind: TokenKind::Identifier("if"),
                 span: Span { start: 0, end: 2 }
@@ -247,7 +262,7 @@ mod tests {
         );
 
         assert_eq!(
-            tokenize("if while"),
+            tokenize_str("if while"),
             vec![
                 Token {
                     kind: TokenKind::Identifier("if"),
@@ -264,7 +279,7 @@ mod tests {
     #[test]
     fn complex_identifier() {
         assert_eq!(
-            tokenize("ifififi if if hile \t\nn\nwhile a"),
+            tokenize_str("ifififi if if hile \t\nn\nwhile a"),
             vec![
                 Token {
                     kind: TokenKind::Identifier("ifififi"),
@@ -301,7 +316,7 @@ mod tests {
     #[test]
     fn simple_integer() {
         assert_eq!(
-            tokenize("834"),
+            tokenize_str("834"),
             vec![Token {
                 kind: TokenKind::Integer(834),
                 span: Span { start: 0, end: 3 }
@@ -309,7 +324,7 @@ mod tests {
         );
 
         assert_eq!(
-            tokenize("1239293234"),
+            tokenize_str("1239293234"),
             vec![Token {
                 kind: TokenKind::Integer(1239293234),
                 span: Span { start: 0, end: 10 }
@@ -320,7 +335,7 @@ mod tests {
     #[test]
     fn complex_integer() {
         assert_eq!(
-            tokenize("1 328 129123 8432"),
+            tokenize_str("1 328 129123 8432"),
             vec![
                 Token {
                     kind: TokenKind::Integer(1),
@@ -345,7 +360,7 @@ mod tests {
     #[test]
     fn more() {
         assert_eq!(
-            tokenize("abcdef 1212 asnthueoa"),
+            tokenize_str("abcdef 1212 asnthueoa"),
             vec![
                 Token {
                     kind: TokenKind::Identifier("abcdef"),
@@ -366,7 +381,7 @@ mod tests {
     #[test]
     fn simple_operator() {
         assert_matches!(
-            tokenize("-").as_slice(),
+            tokenize_str("-").as_slice(),
             &[Token {
                 kind: TokenKind::Minus,
                 ..
@@ -374,7 +389,7 @@ mod tests {
         );
 
         assert_matches!(
-            tokenize("- + + <=").as_slice(),
+            tokenize_str("- + + <=").as_slice(),
             &[
                 Token {
                     kind: TokenKind::Minus,
@@ -399,7 +414,7 @@ mod tests {
     #[test]
     fn test_slashslash_comment() {
         assert_matches!(
-            tokenize("a///+/=0[)!{+)@#}]\nb/a").as_slice(),
+            tokenize_str("a///+/=0[)!{+)@#}]\nb/a").as_slice(),
             &[
                 Token {
                     kind: TokenKind::Identifier("a"),
@@ -424,7 +439,7 @@ mod tests {
     #[test]
     fn test_hashtag_comment() {
         assert_matches!(
-            tokenize("a/#/+/=0[)!{+)@#}]\nb/a").as_slice(),
+            tokenize_str("a/#/+/=0[)!{+)@#}]\nb/a").as_slice(),
             &[
                 Token {
                     kind: TokenKind::Identifier("a"),
@@ -448,5 +463,13 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_line_counting() {
+        let mut source = Source::new("a\nb\n\n//\nb");
+
+        tokenize(&mut source);
+        assert_eq!(source.newlines, vec![0, 2, 4, 5, 8]);
     }
 }
