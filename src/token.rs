@@ -4,23 +4,41 @@ use crate::{Source, Span};
 pub enum TokenKind<'a> {
     Identifier(&'a str),
     Integer(u32),
+    /// `+`
     Plus,
+    /// `-`
     Minus,
+    /// `*`
     Asterisk,
+    /// `/`
     Slash,
+    /// `%`
     Percent,
+    /// `=`
     Equal,
+    /// `==`
     EqualEqual,
+    /// `!=`
     NotEqual,
+    /// `<`
     LessThan,
+    /// `<=`
     LessEqual,
+    /// `>`
     GreaterThan,
+    /// `>=`
     GreaterEqual,
+    /// `(`
     LParen,
+    /// `)`
     RParen,
-    LBracket,
-    RBracket,
+    /// `{`
+    LBrace,
+    /// `}`
+    RBrace,
+    /// `,`
     Comma,
+    /// `;`
     Semicolon,
 }
 
@@ -81,8 +99,8 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
             '%' => TokenKind::Percent,
             '(' => TokenKind::LParen,
             ')' => TokenKind::RParen,
-            '{' => TokenKind::LBracket,
-            '}' => TokenKind::RBracket,
+            '{' => TokenKind::LBrace,
+            '}' => TokenKind::RBrace,
             ',' => TokenKind::Comma,
             ';' => TokenKind::Semicolon,
 
