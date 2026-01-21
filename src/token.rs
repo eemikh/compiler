@@ -50,48 +50,54 @@ pub struct Token<'code> {
 
 struct Tokenizer<'source, 'code> {
     source: &'source mut Source<'code>,
-    tokens: Vec<Token<'code>>,
     index: usize,
 }
 
+impl<'source, 'code> Iterator for Tokenizer<'source, 'code> {
+    type Item = Token<'code>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
+    }
+}
+
 impl<'source, 'code> Tokenizer<'source, 'code> {
-    fn tokenize(mut self) -> Vec<Token<'code>> {
-        while let Some(c) = self.peek() {
-            match c {
-                '#' => self.advance_until_newline(),
-                '/' => {
-                    if self.npeek(2) == Some('/') {
-                        self.advance_until_newline();
-                    } else {
-                        // must be the TokenKind::Slash
-                        let tokenize_success = self.try_tokenize_operator();
-                        assert!(tokenize_success);
-                    }
-                }
-                'a'..='z' | 'A'..='Z' | '_' => {
-                    self.tokenize_identifier();
-                }
-                ' ' | '\t' | '\n' => {
-                    self.advance();
-                }
-                '0'..='9' => {
-                    self.tokenize_integer();
-                }
-                _ => {
-                    if !self.try_tokenize_operator() {
-                        panic!("unexpected character");
-                    }
+    fn next_token(&mut self) -> Option<Token<'code>> {
+        match self.peek()? {
+            '#' => {
+                self.advance_until_newline();
+                self.next_token()
+            }
+            '/' => {
+                if self.npeek(2) == Some('/') {
+                    self.advance_until_newline();
+                    self.next_token()
+                } else {
+                    // must be TokenKind::Slash
+                    let token = self.tokenize_operator();
+                    assert_eq!(
+                        token.as_ref().map(|token| token.kind),
+                        Some(TokenKind::Slash)
+                    );
+                    token
                 }
             }
+            'a'..='z' | 'A'..='Z' | '_' => self.tokenize_identifier(),
+            ' ' | '\t' | '\n' => {
+                self.advance();
+                self.next_token()
+            }
+            '0'..='9' => self.tokenize_integer(),
+            _ => Some(
+                self.tokenize_operator()
+                    .expect("TODO: return error if fails"),
+            ),
         }
-
-        self.tokens
     }
 
-    fn try_tokenize_operator(&mut self) -> bool {
+    fn tokenize_operator(&mut self) -> Option<Token<'code>> {
         let start = self.index;
-        let Some(c) = self.peek() else { return false };
-        let kind = match c {
+        let kind = match self.peek()? {
             '+' => TokenKind::Plus,
             '-' => TokenKind::Minus,
             '*' => TokenKind::Asterisk,
@@ -137,22 +143,20 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
 
                 TokenKind::NotEqual
             }
-            _ => return false,
+            _ => return None,
         };
         self.advance();
 
-        self.push(Token {
+        Some(Token {
             kind,
             span: Span {
                 start,
                 end: self.index,
             },
-        });
-
-        true
+        })
     }
 
-    fn tokenize_identifier(&mut self) {
+    fn tokenize_identifier(&mut self) -> Option<Token<'code>> {
         let start = self.index;
 
         while let Some(c) = self.peek() {
@@ -165,16 +169,16 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
         }
 
         let identifier = &self.source.code[start..self.index];
-        self.push(Token {
+        Some(Token {
             kind: TokenKind::Identifier(identifier),
             span: Span {
                 start,
                 end: self.index,
             },
-        });
+        })
     }
 
-    fn tokenize_integer(&mut self) {
+    fn tokenize_integer(&mut self) -> Option<Token<'code>> {
         let mut integer: u32 = 0;
         let start = self.index;
 
@@ -193,13 +197,13 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
             }
         }
 
-        self.push(Token {
+        Some(Token {
             kind: TokenKind::Integer(integer),
             span: Span {
                 start,
                 end: self.index,
             },
-        });
+        })
     }
 
     fn advance_until_newline(&mut self) {
@@ -211,10 +215,6 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
                 }
             }
         }
-    }
-
-    fn push(&mut self, token: Token<'code>) {
-        self.tokens.push(token);
     }
 
     fn peek(&self) -> Option<char> {
@@ -244,14 +244,8 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
     }
 }
 
-pub fn tokenize<'a>(source: &mut Source<'a>) -> Vec<Token<'a>> {
-    let tokenizer = Tokenizer {
-        index: 0,
-        source,
-        tokens: Vec::new(),
-    };
-
-    tokenizer.tokenize()
+pub fn tokenize<'a>(source: &mut Source<'a>) -> impl Iterator<Item = Token<'a>> {
+    Tokenizer { index: 0, source }
 }
 
 #[cfg(test)]
@@ -262,11 +256,11 @@ mod tests {
 
     use super::*;
 
-    /// A wrapper used for testing to not have to provide a full [`Source`]
+    /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators
     fn tokenize_str<'code>(code: &'code str) -> Vec<Token<'code>> {
         let mut code = Source::new(code);
 
-        tokenize(&mut code)
+        tokenize(&mut code).collect()
     }
 
     #[test]
@@ -487,7 +481,7 @@ mod tests {
     fn test_line_counting() {
         let mut source = Source::new("a\nb\n\n//\nb");
 
-        tokenize(&mut source);
+        tokenize(&mut source).for_each(|_| ());
         assert_eq!(source.newlines, vec![0, 2, 4, 5, 8]);
     }
 }
