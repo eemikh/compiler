@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{fmt::Display, iter::Peekable};
 
 use crate::{
     Span,
@@ -88,6 +88,62 @@ pub struct Identifier(String);
 pub struct Node<T> {
     item: T,
     span: Span,
+}
+
+impl<T: Display> Display for Node<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.item)
+    }
+}
+
+impl Display for Primary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Primary::Bool(b) => write!(f, "{}", b),
+            Primary::Integer(i) => write!(f, "{}", i),
+            Primary::Identifier(identifier) => write!(f, "{}", identifier.0),
+        }
+    }
+}
+
+impl Display for BinaryExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {} {})", self.operator, self.lhs, self.rhs)
+    }
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expression::Binary(binary_expression) => write!(f, "{}", binary_expression),
+            Expression::Primary(primary) => write!(f, "{}", primary),
+        }
+    }
+}
+
+impl Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                BinaryOperator::Or => "or",
+                BinaryOperator::And => "and",
+                BinaryOperator::Equals => "=",
+                BinaryOperator::EqualEqual => "==",
+                BinaryOperator::NotEqual => "!=",
+                BinaryOperator::LessThan => "<",
+                BinaryOperator::LessEqual => "<=",
+                BinaryOperator::GreaterThan => ">",
+                BinaryOperator::GreaterEqual => ">=",
+                BinaryOperator::Add => "+",
+                BinaryOperator::Subtract => "-",
+                BinaryOperator::Multiply => "*",
+                BinaryOperator::Divide => "/",
+                BinaryOperator::Modulo => "%",
+            }
+        )
+    }
 }
 
 struct Parser<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> {
@@ -252,11 +308,11 @@ mod tests {
     #[test]
     fn test_binary_expression() {
         assert_eq!(
-            quick_parser(&token_vec(&[T(TokenKind::Integer(1), 1)])).parse_expression(),
-            Ok(Node {
-                item: Expression::Primary(Primary::Integer(1)),
-                span: Span { start: 0, end: 1 }
-            }),
+            quick_parser(&token_vec(&[T(TokenKind::Integer(1), 1)]))
+                .parse_expression()
+                .unwrap()
+                .to_string(),
+            "1"
         );
 
         assert_eq!(
@@ -265,21 +321,10 @@ mod tests {
                 T(TokenKind::Plus, 1),
                 T(TokenKind::Integer(2), 1),
             ]))
-            .parse_expression(),
-            Ok(Node {
-                item: Expression::Binary(BinaryExpression {
-                    operator: BinaryOperator::Add,
-                    lhs: Box::new(Node {
-                        item: Expression::Primary(Primary::Integer(1)),
-                        span: Span { start: 0, end: 1 }
-                    }),
-                    rhs: Box::new(Node {
-                        item: Expression::Primary(Primary::Integer(2)),
-                        span: Span { start: 2, end: 3 }
-                    })
-                }),
-                span: Span { start: 0, end: 3 }
-            })
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(+ 1 2)"
         );
 
         assert_eq!(
@@ -292,41 +337,10 @@ mod tests {
                 T(TokenKind::Minus, 1),
                 T(TokenKind::Integer(4), 1),
             ]))
-            .parse_expression(),
-            Ok(Node {
-                item: Expression::Binary(BinaryExpression {
-                    operator: BinaryOperator::Subtract,
-                    lhs: Box::new(Node {
-                        item: Expression::Binary(BinaryExpression {
-                            operator: BinaryOperator::Add,
-                            lhs: Box::new(Node {
-                                item: Expression::Primary(Primary::Integer(1)),
-                                span: Span { start: 0, end: 1 }
-                            }),
-                            rhs: Box::new(Node {
-                                item: Expression::Binary(BinaryExpression {
-                                    operator: BinaryOperator::Multiply,
-                                    lhs: Box::new(Node {
-                                        item: Expression::Primary(Primary::Integer(2)),
-                                        span: Span { start: 2, end: 3 }
-                                    }),
-                                    rhs: Box::new(Node {
-                                        item: Expression::Primary(Primary::Integer(3)),
-                                        span: Span { start: 4, end: 5 }
-                                    })
-                                }),
-                                span: Span { start: 2, end: 5 }
-                            })
-                        }),
-                        span: Span { start: 0, end: 5 }
-                    }),
-                    rhs: Box::new(Node {
-                        item: Expression::Primary(Primary::Integer(4)),
-                        span: Span { start: 6, end: 7 }
-                    })
-                }),
-                span: Span { start: 0, end: 7 }
-            })
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(- (+ 1 (* 2 3)) 4)"
         );
     }
 
@@ -340,37 +354,10 @@ mod tests {
                 T(TokenKind::Equal, 1),
                 T(TokenKind::Identifier("c"), 1),
             ]))
-            .parse_expression(),
-            Ok(Node {
-                item: Expression::Binary(BinaryExpression {
-                    operator: BinaryOperator::Equals,
-                    lhs: Box::new(Node {
-                        item: Expression::Primary(Primary::Identifier(Identifier(String::from(
-                            "a"
-                        )))),
-                        span: Span { start: 0, end: 1 }
-                    }),
-                    rhs: Box::new(Node {
-                        item: Expression::Binary(BinaryExpression {
-                            operator: BinaryOperator::Equals,
-                            lhs: Box::new(Node {
-                                item: Expression::Primary(Primary::Identifier(Identifier(
-                                    String::from("b")
-                                ))),
-                                span: Span { start: 2, end: 3 }
-                            }),
-                            rhs: Box::new(Node {
-                                item: Expression::Primary(Primary::Identifier(Identifier(
-                                    String::from("c")
-                                ))),
-                                span: Span { start: 4, end: 5 }
-                            })
-                        }),
-                        span: Span { start: 2, end: 5 }
-                    })
-                }),
-                span: Span { start: 0, end: 5 }
-            })
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(= a (= b c))"
         );
     }
 }
