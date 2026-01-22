@@ -163,11 +163,13 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
                 TokenKind::NotEqual
             }
             _ => {
+                self.advance();
+
                 return Err(ParseError {
                     kind: ParseErrorKind::UnexpectedCharacter(c),
                     span: Span {
-                        start: self.index,
-                        end: self.index + 1,
+                        start,
+                        end: self.index,
                     },
                 });
             }
@@ -282,7 +284,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
                     kind: ParseErrorKind::ExpectedCharacter { expected: c, got },
                     span: Span {
                         start: self.index,
-                        end: self.index + 1,
+                        end: self.index + got.len_utf8(),
                     },
                 }),
             },
@@ -643,6 +645,20 @@ mod tests {
                 Ok(Token {
                     kind: TokenKind::Eof,
                     span: Span { start: 3, end: 3 }
+                }),
+            ]
+        );
+
+        assert_matches!(
+            tokenize_str_err("ä").as_slice(),
+            &[
+                Err(ParseError {
+                    kind: ParseErrorKind::UnexpectedCharacter('ä'),
+                    span: Span { start: 0, end: 2 }
+                }),
+                Ok(Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 2, end: 2 }
                 }),
             ]
         );
