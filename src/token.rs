@@ -330,19 +330,19 @@ pub fn tokenize<'a>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::Source;
 
     use super::*;
 
     /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators or errors
-    fn tokenize_str<'code>(code: &'code str) -> Vec<Result<Token<'code>, ParseError>> {
+    pub(crate) fn tokenize_str<'code>(code: &'code str) -> Vec<Result<Token<'code>, ParseError>> {
         let mut code = Source::new(code);
 
         tokenize(&mut code).collect()
     }
 
-    enum Tok<'a> {
+    pub(crate) enum Tok<'a> {
         /// Token type, length
         T(TokenKind<'a>, usize),
         /// Whitespace
@@ -353,7 +353,7 @@ mod tests {
 
     use Tok::*;
 
-    fn token_vec<'a>(tokens: &[Tok<'a>]) -> Vec<Result<Token<'a>, ParseError>> {
+    pub(crate) fn token_vec<'a>(tokens: &[Tok<'a>]) -> Vec<Result<Token<'a>, ParseError>> {
         let mut v = Vec::new();
         let mut i = 0;
 

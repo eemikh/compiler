@@ -200,14 +200,15 @@ fn parse<'code>(tokens: impl Iterator<Item = Result<Token<'code>, ParseError>>) 
 mod tests {
     use std::assert_matches::assert_matches;
 
+    use crate::token::tests::{Tok::*, token_vec};
     use crate::{Span, token::TokenKind};
 
     use super::*;
 
     /// A wrapper for creating a [`Parser`] out of statically allocated tokens
-    fn quick_parser(
-        tokens: &'static [Result<Token<'static>, ParseError>],
-    ) -> Parser<'static, impl Iterator<Item = Result<Token<'static>, ParseError>>> {
+    fn quick_parser<'a>(
+        tokens: &[Result<Token<'a>, ParseError>],
+    ) -> Parser<'a, impl Iterator<Item = Result<Token<'a>, ParseError>>> {
         Parser {
             tokens: tokens.iter().cloned().peekable(),
         }
@@ -216,11 +217,7 @@ mod tests {
     #[test]
     fn test_literal() {
         assert_matches!(
-            quick_parser(&[Ok(Token {
-                kind: TokenKind::Identifier("true"),
-                span: Span { start: 0, end: 4 },
-            })])
-            .parse_primary(),
+            quick_parser(&token_vec(&[T(TokenKind::Identifier("true"), 4)])).parse_primary(),
             Ok(Node {
                 item: Primary::Bool(true),
                 span: Span { start: 0, end: 4 },
@@ -228,11 +225,7 @@ mod tests {
         );
 
         assert_matches!(
-            quick_parser(&[Ok(Token {
-                kind: TokenKind::Identifier("false"),
-                span: Span { start: 0, end: 5 },
-            })])
-            .parse_primary(),
+            quick_parser(&token_vec(&[T(TokenKind::Identifier("false"), 5)])).parse_primary(),
             Ok(Node {
                 item: Primary::Bool(false),
                 span: Span { start: 0, end: 5 },
@@ -240,11 +233,7 @@ mod tests {
         );
 
         assert_matches!(
-            quick_parser(&[Ok(Token {
-                kind: TokenKind::Integer(1234),
-                span: Span { start: 0, end: 4 },
-            })])
-            .parse_primary(),
+            quick_parser(&token_vec(&[T(TokenKind::Integer(1234), 4)])).parse_primary(),
             Ok(Node {
                 item: Primary::Integer(1234),
                 span: Span { start: 0, end: 4 },
@@ -252,11 +241,7 @@ mod tests {
         );
 
         assert_eq!(
-            quick_parser(&[Ok(Token {
-                kind: TokenKind::Identifier("hello"),
-                span: Span { start: 0, end: 5 },
-            })])
-            .parse_primary(),
+            quick_parser(&token_vec(&[T(TokenKind::Identifier("hello"), 5)])).parse_primary(),
             Ok(Node {
                 item: Primary::Identifier(Identifier(String::from("hello"))),
                 span: Span { start: 0, end: 5 },
@@ -266,18 +251,8 @@ mod tests {
 
     #[test]
     fn test_binary_expression() {
-        assert_matches!(
-            quick_parser(&[
-                Ok(Token {
-                    kind: TokenKind::Integer(1),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 1, end: 1 }
-                })
-            ])
-            .parse_expression(),
+        assert_eq!(
+            quick_parser(&token_vec(&[T(TokenKind::Integer(1), 1)])).parse_expression(),
             Ok(Node {
                 item: Expression::Primary(Primary::Integer(1)),
                 span: Span { start: 0, end: 1 }
@@ -285,24 +260,11 @@ mod tests {
         );
 
         assert_eq!(
-            quick_parser(&[
-                Ok(Token {
-                    kind: TokenKind::Integer(1),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Plus,
-                    span: Span { start: 1, end: 2 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Integer(2),
-                    span: Span { start: 2, end: 3 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 3, end: 3 }
-                })
-            ])
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(2), 1),
+            ]))
             .parse_expression(),
             Ok(Node {
                 item: Expression::Binary(BinaryExpression {
@@ -321,40 +283,15 @@ mod tests {
         );
 
         assert_eq!(
-            quick_parser(&[
-                Ok(Token {
-                    kind: TokenKind::Integer(1),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Plus,
-                    span: Span { start: 1, end: 2 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Integer(2),
-                    span: Span { start: 2, end: 3 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Asterisk,
-                    span: Span { start: 3, end: 4 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Integer(3),
-                    span: Span { start: 4, end: 5 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Minus,
-                    span: Span { start: 5, end: 6 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Integer(4),
-                    span: Span { start: 6, end: 7 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 7, end: 7 }
-                })
-            ])
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::Asterisk, 1),
+                T(TokenKind::Integer(3), 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Integer(4), 1),
+            ]))
             .parse_expression(),
             Ok(Node {
                 item: Expression::Binary(BinaryExpression {
@@ -396,32 +333,13 @@ mod tests {
     #[test]
     fn test_assignment() {
         assert_eq!(
-            quick_parser(&[
-                Ok(Token {
-                    kind: TokenKind::Identifier("a"),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Equal,
-                    span: Span { start: 1, end: 2 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Identifier("b"),
-                    span: Span { start: 2, end: 3 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Equal,
-                    span: Span { start: 3, end: 4 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Identifier("c"),
-                    span: Span { start: 4, end: 5 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 5, end: 5 }
-                })
-            ])
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Identifier("c"), 1),
+            ]))
             .parse_expression(),
             Ok(Node {
                 item: Expression::Binary(BinaryExpression {
