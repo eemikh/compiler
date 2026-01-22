@@ -50,10 +50,10 @@ static BINARY_OP_TOKENS: &[&[TokenKind<'static>]] = &[
     &[TokenKind::Asterisk, TokenKind::Slash, TokenKind::Percent],
 ];
 
-impl<'a> TryFrom<TokenKind<'a>> for BinaryOperator {
+impl TryFrom<TokenKind<'_>> for BinaryOperator {
     type Error = ();
 
-    fn try_from(value: TokenKind<'a>) -> Result<Self, Self::Error> {
+    fn try_from(value: TokenKind<'_>) -> Result<Self, Self::Error> {
         match value {
             TokenKind::Identifier("or") => Ok(BinaryOperator::Or),
             TokenKind::Identifier("and") => Ok(BinaryOperator::And),
