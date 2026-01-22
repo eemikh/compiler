@@ -282,7 +282,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
                     kind: ParseErrorKind::ExpectedCharacter { expected: c, got },
                     span: Span {
                         start: self.index,
-                        end: self.index + 2,
+                        end: self.index + 1,
                     },
                 }),
             },
@@ -290,7 +290,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
                 kind: ParseErrorKind::UnexpectedEof,
                 span: Span {
                     start: self.index,
-                    end: self.index + 1,
+                    end: self.index,
                 },
             }),
         }
@@ -320,6 +320,12 @@ mod tests {
         let mut code = Source::new(code);
 
         tokenize(&mut code).map(|token| token.unwrap()).collect()
+    }
+
+    fn tokenize_str_err<'code>(code: &'code str) -> Vec<Result<Token<'code>, ParseError>> {
+        let mut code = Source::new(code);
+
+        tokenize(&mut code).collect()
     }
 
     #[test]
@@ -594,5 +600,51 @@ mod tests {
 
         tokenize(&mut source).for_each(|_| ());
         assert_eq!(source.newlines, vec![0, 2, 4, 5, 8]);
+    }
+
+    #[test]
+    fn test_errors() {
+        assert_matches!(
+            tokenize_str_err("a!").as_slice(),
+            &[
+                Ok(Token {
+                    kind: TokenKind::Identifier("a"),
+                    span: Span { start: 0, end: 1 }
+                }),
+                Err(ParseError {
+                    kind: ParseErrorKind::UnexpectedEof,
+                    span: Span { start: 2, end: 2 }
+                }),
+                Ok(Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 2, end: 2 }
+                }),
+            ]
+        );
+
+        assert_matches!(
+            tokenize_str_err("a!a").as_slice(),
+            &[
+                Ok(Token {
+                    kind: TokenKind::Identifier("a"),
+                    span: Span { start: 0, end: 1 }
+                }),
+                Err(ParseError {
+                    kind: ParseErrorKind::ExpectedCharacter {
+                        expected: '=',
+                        got: 'a'
+                    },
+                    span: Span { start: 2, end: 3 }
+                }),
+                Ok(Token {
+                    kind: TokenKind::Identifier("a"),
+                    span: Span { start: 2, end: 3 }
+                }),
+                Ok(Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 3, end: 3 }
+                }),
+            ]
+        );
     }
 }
