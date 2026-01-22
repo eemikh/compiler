@@ -9,6 +9,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Binary(BinaryExpression),
+    Unary(UnaryExpression),
     Primary(Primary),
 }
 
@@ -17,6 +18,18 @@ pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Node<Expression>>,
     rhs: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnaryExpression {
+    operator: UnaryOperator,
+    operand: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOperator {
+    Not,
+    Negate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,11 +125,31 @@ impl Display for BinaryExpression {
     }
 }
 
+impl Display for UnaryExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {})", self.operator, self.operand)
+    }
+}
+
+impl Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                UnaryOperator::Not => "not",
+                UnaryOperator::Negate => "-",
+            }
+        )
+    }
+}
+
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expression::Binary(binary_expression) => write!(f, "{}", binary_expression),
             Expression::Primary(primary) => write!(f, "{}", primary),
+            Expression::Unary(unary_expression) => write!(f, "{}", unary_expression),
         }
     }
 }
@@ -177,12 +210,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         assert!(level <= BINARY_OP_TOKENS.len());
 
         if level == BINARY_OP_TOKENS.len() {
-            let primary = self.parse_primary()?;
-
-            return Ok(Node {
-                item: Expression::Primary(primary.item),
-                span: primary.span,
-            });
+            return self.parse_unary_expression();
         }
 
         let ops = BINARY_OP_TOKENS[level];
@@ -214,6 +242,37 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         }
 
         Ok(lhs)
+    }
+
+    fn parse_unary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+        let token = self.peek().unwrap();
+        let token_span = token.span;
+
+        let op = match token.kind {
+            TokenKind::Minus => UnaryOperator::Negate,
+            TokenKind::Identifier("not") => UnaryOperator::Not,
+            _ => {
+                let primary = self.parse_primary()?;
+
+                return Ok(Node {
+                    item: Expression::Primary(primary.item),
+                    span: primary.span,
+                });
+            }
+        };
+
+        self.next();
+
+        let rhs = self.parse_unary_expression()?;
+        let rhs_span = rhs.span;
+
+        Ok(Node {
+            item: Expression::Unary(UnaryExpression {
+                operator: op,
+                operand: Box::new(rhs),
+            }),
+            span: token_span.to(rhs_span),
+        })
     }
 
     fn parse_primary(&mut self) -> Result<Node<Primary>, ParseError> {
@@ -376,6 +435,38 @@ mod tests {
             .unwrap()
             .to_string(),
             "(= a (= (+ b c) d))"
+        );
+    }
+
+    #[test]
+    fn test_unary() {
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("not"), 3),
+                T(TokenKind::Identifier("not"), 3),
+                T(TokenKind::Identifier("a"), 3),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(not (not a))"
+        );
+
+        // 1*not-1=2
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Asterisk, 1),
+                T(TokenKind::Identifier("not"), 3),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Integer(2), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(= (* 1 (not (- 1))) 2)"
         );
     }
 }
