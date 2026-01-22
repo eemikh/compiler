@@ -2,7 +2,7 @@ use std::{fmt::Display, iter::Peekable};
 
 use crate::{
     Span,
-    error::ParseError,
+    error::{ParseError, ParseErrorKind},
     token::{Token, TokenKind},
 };
 
@@ -251,14 +251,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let op = match token.kind {
             TokenKind::Minus => UnaryOperator::Negate,
             TokenKind::Identifier("not") => UnaryOperator::Not,
-            _ => {
-                let primary = self.parse_primary()?;
-
-                return Ok(Node {
-                    item: Expression::Primary(primary.item),
-                    span: primary.span,
-                });
-            }
+            _ => return self.parse_paren_expression(),
         };
 
         self.next();
@@ -275,6 +268,26 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
+    fn parse_paren_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+        match self.peek().unwrap().kind == TokenKind::LParen {
+            true => {
+                self.next();
+                let expr = self.parse_expression()?;
+                self.expect(TokenKind::RParen)?;
+
+                Ok(expr)
+            }
+            false => {
+                let primary = self.parse_primary()?;
+
+                Ok(Node {
+                    item: Expression::Primary(primary.item),
+                    span: primary.span,
+                })
+            }
+        }
+    }
+
     fn parse_primary(&mut self) -> Result<Node<Primary>, ParseError> {
         let token = self.next()?;
 
@@ -283,6 +296,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             TokenKind::Identifier("false") => Primary::Bool(false),
             TokenKind::Integer(int) => Primary::Integer(int),
             TokenKind::Identifier(x) => Primary::Identifier(Identifier(x.to_string())),
+            TokenKind::LParen => todo!(),
             _ => todo!("invalid {:?}", token.kind),
         };
 
@@ -300,6 +314,19 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
     fn next(&mut self) -> Result<Token<'code>, ParseError> {
         // FIXME: unwrap
         self.tokens.next().unwrap()
+    }
+
+    fn expect(&mut self, token_kind: TokenKind<'_>) -> Result<(), ParseError> {
+        let tok = self.next()?;
+
+        if tok.kind == token_kind {
+            Ok(())
+        } else {
+            Err(ParseError {
+                kind: ParseErrorKind::UnexpectedToken,
+                span: tok.span,
+            })
+        }
     }
 }
 
@@ -467,6 +494,74 @@ mod tests {
             .unwrap()
             .to_string(),
             "(= (* 1 (not (- 1))) 2)"
+        );
+
+        // 1---3
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Integer(3), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(- 1 (- (- 3)))"
+        );
+    }
+
+    #[test]
+    fn test_parentheses() {
+        // 1*(2+3)
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Asterisk, 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(3), 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(* 1 (+ 2 3))"
+        );
+
+        // 1-(-2)
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Minus, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(- 1 (- 2))"
+        );
+
+        // ((2)+3)
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LParen, 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::RParen, 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(3), 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(+ 2 3)"
         );
     }
 }

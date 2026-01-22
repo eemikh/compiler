@@ -5,6 +5,7 @@ pub enum ParseErrorKind {
     UnexpectedCharacter(char),
     ExpectedCharacter { expected: char, got: char },
     IntegerOverflow,
+    UnexpectedToken,
     UnexpectedEof,
 }
 
