@@ -346,6 +346,7 @@ mod tests {
 
     #[test]
     fn test_assignment() {
+        // a=b=c
         assert_eq!(
             quick_parser(&token_vec(&[
                 T(TokenKind::Identifier("a"), 1),
@@ -358,6 +359,23 @@ mod tests {
             .unwrap()
             .to_string(),
             "(= a (= b c))"
+        );
+
+        // a=b+c=d
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Identifier("d"), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(= a (= (+ b c) d))"
         );
     }
 }
