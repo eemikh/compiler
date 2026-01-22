@@ -1,12 +1,13 @@
 #![feature(assert_matches)]
 use std::env::args;
 
+mod error;
 mod token;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Span {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,7 @@
-use crate::{Source, Span};
+use crate::{
+    Source, Span,
+    error::{ParseError, ParseErrorKind},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind<'a> {
@@ -40,6 +43,7 @@ pub enum TokenKind<'a> {
     Comma,
     /// `;`
     Semicolon,
+    Eof,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +55,11 @@ pub struct Token<'code> {
 struct Tokenizer<'source, 'code> {
     source: &'source mut Source<'code>,
     index: usize,
+    had_eof: bool,
 }
 
 impl<'source, 'code> Iterator for Tokenizer<'source, 'code> {
-    type Item = Token<'code>;
+    type Item = Result<Token<'code>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_token()
@@ -62,42 +67,56 @@ impl<'source, 'code> Iterator for Tokenizer<'source, 'code> {
 }
 
 impl<'source, 'code> Tokenizer<'source, 'code> {
-    fn next_token(&mut self) -> Option<Token<'code>> {
-        match self.peek()? {
-            '#' => {
-                self.advance_until_newline();
-                self.next_token()
-            }
-            '/' => {
-                if self.npeek(2) == Some('/') {
-                    self.advance_until_newline();
-                    self.next_token()
-                } else {
-                    // must be TokenKind::Slash
-                    let token = self.tokenize_operator();
-                    assert_eq!(
-                        token.as_ref().map(|token| token.kind),
-                        Some(TokenKind::Slash)
-                    );
-                    token
-                }
-            }
-            'a'..='z' | 'A'..='Z' | '_' => self.tokenize_identifier(),
-            ' ' | '\t' | '\n' => {
-                self.advance();
-                self.next_token()
-            }
-            '0'..='9' => self.tokenize_integer(),
-            _ => Some(
-                self.tokenize_operator()
-                    .expect("TODO: return error if fails"),
-            ),
+    fn next_token(&mut self) -> Option<Result<Token<'code>, ParseError>> {
+        if self.had_eof {
+            return None;
         }
+
+        let res = match self.peek() {
+            Some(c) => match c {
+                '#' => {
+                    self.advance_until_newline();
+                    self.next_token()?
+                }
+                '/' => {
+                    if self.npeek(2) == Some('/') {
+                        self.advance_until_newline();
+                        self.next_token()?
+                    } else {
+                        // must be TokenKind::Slash
+                        let token = self.tokenize_operator();
+                        assert_eq!(token.as_ref().unwrap().kind, TokenKind::Slash);
+                        token
+                    }
+                }
+                'a'..='z' | 'A'..='Z' | '_' => self.tokenize_identifier(),
+                ' ' | '\t' | '\n' => {
+                    self.advance();
+                    self.next_token()?
+                }
+                '0'..='9' => self.tokenize_integer(),
+                _ => self.tokenize_operator(),
+            },
+            None => self.eof_token(),
+        };
+
+        if let Ok(Token {
+            kind: TokenKind::Eof,
+            ..
+        }) = res
+        {
+            self.had_eof = true;
+        }
+
+        Some(res)
     }
 
-    fn tokenize_operator(&mut self) -> Option<Token<'code>> {
+    fn tokenize_operator(&mut self) -> Result<Token<'code>, ParseError> {
         let start = self.index;
-        let kind = match self.peek()? {
+        let Some(c) = self.peek() else {
+            return self.eof_token();
+        };
+        let kind = match c {
             '+' => TokenKind::Plus,
             '-' => TokenKind::Minus,
             '*' => TokenKind::Asterisk,
@@ -139,15 +158,23 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
             // forced multicharacter operator
             '!' => {
                 self.advance();
-                self.expect_peek('=');
+                self.expect_peek('=')?;
 
                 TokenKind::NotEqual
             }
-            _ => return None,
+            _ => {
+                return Err(ParseError {
+                    kind: ParseErrorKind::UnexpectedCharacter(c),
+                    span: Span {
+                        start: self.index,
+                        end: self.index + 1,
+                    },
+                });
+            }
         };
         self.advance();
 
-        Some(Token {
+        Ok(Token {
             kind,
             span: Span {
                 start,
@@ -156,7 +183,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
         })
     }
 
-    fn tokenize_identifier(&mut self) -> Option<Token<'code>> {
+    fn tokenize_identifier(&mut self) -> Result<Token<'code>, ParseError> {
         let start = self.index;
 
         while let Some(c) = self.peek() {
@@ -169,7 +196,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
         }
 
         let identifier = &self.source.code[start..self.index];
-        Some(Token {
+        Ok(Token {
             kind: TokenKind::Identifier(identifier),
             span: Span {
                 start,
@@ -178,7 +205,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
         })
     }
 
-    fn tokenize_integer(&mut self) -> Option<Token<'code>> {
+    fn tokenize_integer(&mut self) -> Result<Token<'code>, ParseError> {
         let mut integer: u32 = 0;
         let start = self.index;
 
@@ -197,10 +224,20 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
             }
         }
 
-        Some(Token {
+        Ok(Token {
             kind: TokenKind::Integer(integer),
             span: Span {
                 start,
+                end: self.index,
+            },
+        })
+    }
+
+    fn eof_token(&self) -> Result<Token<'code>, ParseError> {
+        Ok(Token {
+            kind: TokenKind::Eof,
+            span: Span {
+                start: self.index,
                 end: self.index,
             },
         })
@@ -237,15 +274,37 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
         Some(c)
     }
 
-    fn expect_peek(&mut self, c: char) {
-        if self.peek() != Some(c) {
-            panic!("expected character {c}");
+    fn expect_peek(&mut self, c: char) -> Result<(), ParseError> {
+        match self.peek() {
+            Some(got) => match got == c {
+                true => Ok(()),
+                false => Err(ParseError {
+                    kind: ParseErrorKind::ExpectedCharacter { expected: c, got },
+                    span: Span {
+                        start: self.index,
+                        end: self.index + 2,
+                    },
+                }),
+            },
+            None => Err(ParseError {
+                kind: ParseErrorKind::UnexpectedEof,
+                span: Span {
+                    start: self.index,
+                    end: self.index + 1,
+                },
+            }),
         }
     }
 }
 
-pub fn tokenize<'a>(source: &mut Source<'a>) -> impl Iterator<Item = Token<'a>> {
-    Tokenizer { index: 0, source }
+pub fn tokenize<'a>(
+    source: &mut Source<'a>,
+) -> impl Iterator<Item = Result<Token<'a>, ParseError>> {
+    Tokenizer {
+        index: 0,
+        source,
+        had_eof: false,
+    }
 }
 
 #[cfg(test)]
@@ -256,21 +315,27 @@ mod tests {
 
     use super::*;
 
-    /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators
+    /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators or errors
     fn tokenize_str<'code>(code: &'code str) -> Vec<Token<'code>> {
         let mut code = Source::new(code);
 
-        tokenize(&mut code).collect()
+        tokenize(&mut code).map(|token| token.unwrap()).collect()
     }
 
     #[test]
     fn simple_identifier() {
         assert_eq!(
             tokenize_str("if"),
-            vec![Token {
-                kind: TokenKind::Identifier("if"),
-                span: Span { start: 0, end: 2 }
-            }]
+            vec![
+                Token {
+                    kind: TokenKind::Identifier("if"),
+                    span: Span { start: 0, end: 2 }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 2, end: 2 }
+                },
+            ]
         );
 
         assert_eq!(
@@ -283,7 +348,11 @@ mod tests {
                 Token {
                     kind: TokenKind::Identifier("while"),
                     span: Span { start: 3, end: 8 }
-                }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 8, end: 8 }
+                },
             ]
         );
     }
@@ -320,7 +389,11 @@ mod tests {
                 Token {
                     kind: TokenKind::Identifier("a"),
                     span: Span { start: 29, end: 30 }
-                }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 30, end: 30 }
+                },
             ]
         );
     }
@@ -329,18 +402,30 @@ mod tests {
     fn simple_integer() {
         assert_eq!(
             tokenize_str("834"),
-            vec![Token {
-                kind: TokenKind::Integer(834),
-                span: Span { start: 0, end: 3 }
-            }]
+            vec![
+                Token {
+                    kind: TokenKind::Integer(834),
+                    span: Span { start: 0, end: 3 }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 3, end: 3 }
+                },
+            ]
         );
 
         assert_eq!(
             tokenize_str("1239293234"),
-            vec![Token {
-                kind: TokenKind::Integer(1239293234),
-                span: Span { start: 0, end: 10 }
-            }]
+            vec![
+                Token {
+                    kind: TokenKind::Integer(1239293234),
+                    span: Span { start: 0, end: 10 }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 10, end: 10 }
+                },
+            ]
         );
     }
 
@@ -364,7 +449,11 @@ mod tests {
                 Token {
                     kind: TokenKind::Integer(8432),
                     span: Span { start: 13, end: 17 }
-                }
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 17, end: 17 }
+                },
             ]
         );
     }
@@ -386,6 +475,10 @@ mod tests {
                     kind: TokenKind::Identifier("asnthueoa"),
                     span: Span { start: 12, end: 21 }
                 },
+                Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 21, end: 21 }
+                },
             ]
         );
     }
@@ -394,10 +487,16 @@ mod tests {
     fn simple_operator() {
         assert_matches!(
             tokenize_str("-").as_slice(),
-            &[Token {
-                kind: TokenKind::Minus,
-                ..
-            }]
+            &[
+                Token {
+                    kind: TokenKind::Minus,
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Eof,
+                    ..
+                },
+            ]
         );
 
         assert_matches!(
@@ -417,6 +516,10 @@ mod tests {
                 },
                 Token {
                     kind: TokenKind::LessEqual,
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Eof,
                     ..
                 },
             ]
@@ -442,6 +545,10 @@ mod tests {
                 },
                 Token {
                     kind: TokenKind::Identifier("a"),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Eof,
                     ..
                 },
             ]
@@ -471,6 +578,10 @@ mod tests {
                 },
                 Token {
                     kind: TokenKind::Identifier("a"),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Eof,
                     ..
                 },
             ]
