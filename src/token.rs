@@ -48,8 +48,8 @@ pub enum TokenKind<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'code> {
-    kind: TokenKind<'code>,
-    span: Span,
+    pub kind: TokenKind<'code>,
+    pub span: Span,
 }
 
 struct Tokenizer<'source, 'code> {

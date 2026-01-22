@@ -2,9 +2,10 @@
 use std::env::args;
 
 mod error;
+mod parse;
 mod token;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Span {
     pub start: usize,
     pub end: usize,
