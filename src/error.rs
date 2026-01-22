@@ -1,6 +1,6 @@
 use crate::Span;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseErrorKind {
     UnexpectedCharacter(char),
     ExpectedCharacter { expected: char, got: char },
@@ -8,7 +8,7 @@ pub enum ParseErrorKind {
     UnexpectedEof,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParseError {
     pub kind: ParseErrorKind,
     pub span: Span,

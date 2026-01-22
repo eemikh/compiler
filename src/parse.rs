@@ -6,31 +6,34 @@ use crate::{
     token::{Token, TokenKind},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Binary(BinaryExpression),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Expression>,
     rhs: Box<Expression>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,
     Subtract,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Literal {
     Bool(bool),
     Integer(u64),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identifier(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node<T> {
     item: T,
     span: Span,
@@ -48,6 +51,20 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             TokenKind::Identifier("true") => Literal::Bool(true),
             TokenKind::Identifier("false") => Literal::Bool(false),
             TokenKind::Integer(int) => Literal::Integer(int),
+            _ => todo!("invalid"),
+        };
+
+        Ok(Node {
+            item,
+            span: token.span,
+        })
+    }
+
+    fn parse_identifier(&mut self) -> Result<Node<Identifier>, ParseError> {
+        let token = self.next()?;
+
+        let item = match token.kind {
+            TokenKind::Identifier(x) => Identifier(x.to_string()),
             _ => todo!("invalid"),
         };
 
@@ -128,6 +145,21 @@ mod tests {
             Ok(Node {
                 item: Literal::Integer(1234),
                 span: Span { start: 0, end: 4 },
+            })
+        );
+    }
+
+    #[test]
+    fn test_identifier() {
+        assert_eq!(
+            quick_parser(&[Ok(Token {
+                kind: TokenKind::Identifier("hello"),
+                span: Span { start: 0, end: 5 },
+            })])
+            .parse_identifier(),
+            Ok(Node {
+                item: Identifier(String::from("hello")),
+                span: Span { start: 0, end: 5 },
             })
         );
     }
