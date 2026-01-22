@@ -210,29 +210,49 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
     fn tokenize_integer(&mut self) -> Result<Token<'code>, ParseError> {
         let mut integer: u32 = 0;
         let start = self.index;
+        let mut had_overflow = false;
 
         while let Some(c) = self.peek() {
             match c {
                 '0'..='9' => {
                     self.advance();
 
-                    // TODO: handle overflow
-                    integer *= 10;
-                    integer += c
-                        .to_digit(10)
-                        .expect("checked that the character is in digit range");
+                    if !had_overflow {
+                        let digit = c
+                            .to_digit(10)
+                            .expect("checked that the character is in digit range");
+
+                        match integer
+                            .checked_mul(10)
+                            .and_then(|int| int.checked_add(digit))
+                        {
+                            Some(res) => integer = res,
+                            None => {
+                                had_overflow = true;
+                            }
+                        }
+                    }
                 }
                 _ => break,
             }
         }
 
-        Ok(Token {
-            kind: TokenKind::Integer(integer),
-            span: Span {
-                start,
-                end: self.index,
-            },
-        })
+        match had_overflow {
+            false => Ok(Token {
+                kind: TokenKind::Integer(integer),
+                span: Span {
+                    start,
+                    end: self.index,
+                },
+            }),
+            true => Err(ParseError {
+                kind: ParseErrorKind::IntegerOverflow,
+                span: Span {
+                    start,
+                    end: self.index,
+                },
+            }),
+        }
     }
 
     fn eof_token(&self) -> Result<Token<'code>, ParseError> {
@@ -423,16 +443,30 @@ mod tests {
         );
 
         assert_eq!(
-            tokenize_str("1239293234"),
+            tokenize_str("4294967295"),
             vec![
                 Token {
-                    kind: TokenKind::Integer(1239293234),
+                    kind: TokenKind::Integer(u32::MAX),
                     span: Span { start: 0, end: 10 }
                 },
                 Token {
                     kind: TokenKind::Eof,
                     span: Span { start: 10, end: 10 }
                 },
+            ]
+        );
+
+        assert_matches!(
+            tokenize_str_err("4294967296").as_slice(),
+            &[
+                Err(ParseError {
+                    kind: ParseErrorKind::IntegerOverflow,
+                    span: Span { start: 0, end: 10 }
+                }),
+                Ok(Token {
+                    kind: TokenKind::Eof,
+                    span: Span { start: 10, end: 10 }
+                }),
             ]
         );
     }
