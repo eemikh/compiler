@@ -11,6 +11,17 @@ struct Span {
     pub end: usize,
 }
 
+impl Span {
+    pub fn to(&self, other: Span) -> Span {
+        assert!(self.start < other.start);
+
+        Span {
+            start: self.start,
+            end: other.end,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Source<'code> {
     code: &'code str,
