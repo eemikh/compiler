@@ -6,7 +6,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind<'a> {
     Identifier(&'a str),
-    Integer(u32),
+    Integer(u64),
     /// `+`
     Plus,
     /// `-`
@@ -208,7 +208,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
     }
 
     fn tokenize_integer(&mut self) -> Result<Token<'code>, ParseError> {
-        let mut integer: u32 = 0;
+        let mut integer: u64 = 0;
         let start = self.index;
         let mut had_overflow = false;
 
@@ -224,7 +224,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
 
                         match integer
                             .checked_mul(10)
-                            .and_then(|int| int.checked_add(digit))
+                            .and_then(|int| int.checked_add(digit.into()))
                         {
                             Some(res) => integer = res,
                             None => {
@@ -443,29 +443,29 @@ mod tests {
         );
 
         assert_eq!(
-            tokenize_str("4294967295"),
+            tokenize_str("18446744073709551615"),
             vec![
                 Token {
-                    kind: TokenKind::Integer(u32::MAX),
-                    span: Span { start: 0, end: 10 }
+                    kind: TokenKind::Integer(u64::MAX),
+                    span: Span { start: 0, end: 20 }
                 },
                 Token {
                     kind: TokenKind::Eof,
-                    span: Span { start: 10, end: 10 }
+                    span: Span { start: 20, end: 20 }
                 },
             ]
         );
 
         assert_matches!(
-            tokenize_str_err("4294967296").as_slice(),
+            tokenize_str_err("18446744073709551616").as_slice(),
             &[
                 Err(ParseError {
                     kind: ParseErrorKind::IntegerOverflow,
-                    span: Span { start: 0, end: 10 }
+                    span: Span { start: 0, end: 20 }
                 }),
                 Ok(Token {
                     kind: TokenKind::Eof,
-                    span: Span { start: 10, end: 10 }
+                    span: Span { start: 20, end: 20 }
                 }),
             ]
         );
