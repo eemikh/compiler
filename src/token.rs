@@ -331,57 +331,81 @@ pub fn tokenize<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches::assert_matches;
-
     use crate::Source;
 
     use super::*;
 
     /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators or errors
-    fn tokenize_str<'code>(code: &'code str) -> Vec<Token<'code>> {
-        let mut code = Source::new(code);
-
-        tokenize(&mut code).map(|token| token.unwrap()).collect()
-    }
-
-    fn tokenize_str_err<'code>(code: &'code str) -> Vec<Result<Token<'code>, ParseError>> {
+    fn tokenize_str<'code>(code: &'code str) -> Vec<Result<Token<'code>, ParseError>> {
         let mut code = Source::new(code);
 
         tokenize(&mut code).collect()
+    }
+
+    enum Tok<'a> {
+        /// Token type, length
+        T(TokenKind<'a>, usize),
+        /// Whitespace
+        W(usize),
+        /// ParseError
+        E(ParseErrorKind, usize),
+    }
+
+    use Tok::*;
+
+    fn token_vec<'a>(tokens: &[Tok<'a>]) -> Vec<Result<Token<'a>, ParseError>> {
+        let mut v = Vec::new();
+        let mut i = 0;
+
+        for a in tokens {
+            match a {
+                T(t, l) => {
+                    let start = i;
+                    i += l;
+
+                    v.push(Ok(Token {
+                        kind: *t,
+                        span: Span { start, end: i },
+                    }));
+                }
+                W(l) => {
+                    i += l;
+                }
+                E(e, l) => {
+                    v.push(Err(ParseError {
+                        kind: *e,
+                        span: Span {
+                            start: i,
+                            // the length is not consumed as an error may overlap with a token
+                            end: i + l,
+                        },
+                    }));
+                }
+            }
+        }
+
+        v.push(Ok(Token {
+            kind: TokenKind::Eof,
+            span: Span { start: i, end: i },
+        }));
+
+        v
     }
 
     #[test]
     fn simple_identifier() {
         assert_eq!(
             tokenize_str("if"),
-            vec![
-                Token {
-                    kind: TokenKind::Identifier("if"),
-                    span: Span { start: 0, end: 2 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 2, end: 2 }
-                },
-            ]
+            token_vec(&[T(TokenKind::Identifier("if"), 2)])
         );
 
         assert_eq!(
             tokenize_str("if while"),
-            vec![
-                Token {
-                    kind: TokenKind::Identifier("if"),
-                    span: Span { start: 0, end: 2 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("while"),
-                    span: Span { start: 3, end: 8 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 8, end: 8 }
-                },
-            ]
+            token_vec(&[
+                T(TokenKind::Identifier("if"), 2),
+                W(1),
+                T(TokenKind::Identifier("while"), 5)
+            ])
         );
     }
 
@@ -389,40 +413,21 @@ mod tests {
     fn complex_identifier() {
         assert_eq!(
             tokenize_str("ifififi if if hile \t\nn\nwhile a"),
-            vec![
-                Token {
-                    kind: TokenKind::Identifier("ifififi"),
-                    span: Span { start: 0, end: 7 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("if"),
-                    span: Span { start: 8, end: 10 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("if"),
-                    span: Span { start: 11, end: 13 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("hile"),
-                    span: Span { start: 14, end: 18 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("n"),
-                    span: Span { start: 21, end: 22 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("while"),
-                    span: Span { start: 23, end: 28 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("a"),
-                    span: Span { start: 29, end: 30 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 30, end: 30 }
-                },
-            ]
+            token_vec(&[
+                T(TokenKind::Identifier("ifififi"), 7),
+                W(1),
+                T(TokenKind::Identifier("if"), 2),
+                W(1),
+                T(TokenKind::Identifier("if"), 2),
+                W(1),
+                T(TokenKind::Identifier("hile"), 4),
+                W(3),
+                T(TokenKind::Identifier("n"), 1),
+                W(1),
+                T(TokenKind::Identifier("while"), 5),
+                W(1),
+                T(TokenKind::Identifier("a"), 1),
+            ])
         );
     }
 
@@ -430,44 +435,17 @@ mod tests {
     fn simple_integer() {
         assert_eq!(
             tokenize_str("834"),
-            vec![
-                Token {
-                    kind: TokenKind::Integer(834),
-                    span: Span { start: 0, end: 3 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 3, end: 3 }
-                },
-            ]
+            token_vec(&[T(TokenKind::Integer(834), 3)])
         );
 
         assert_eq!(
             tokenize_str("18446744073709551615"),
-            vec![
-                Token {
-                    kind: TokenKind::Integer(u64::MAX),
-                    span: Span { start: 0, end: 20 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 20, end: 20 }
-                },
-            ]
+            token_vec(&[T(TokenKind::Integer(u64::MAX), 20)])
         );
 
-        assert_matches!(
-            tokenize_str_err("18446744073709551616").as_slice(),
-            &[
-                Err(ParseError {
-                    kind: ParseErrorKind::IntegerOverflow,
-                    span: Span { start: 0, end: 20 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 20, end: 20 }
-                }),
-            ]
+        assert_eq!(
+            tokenize_str("18446744073709551616").as_slice(),
+            token_vec(&[E(ParseErrorKind::IntegerOverflow, 20), W(20)])
         );
     }
 
@@ -475,28 +453,15 @@ mod tests {
     fn complex_integer() {
         assert_eq!(
             tokenize_str("1 328 129123 8432"),
-            vec![
-                Token {
-                    kind: TokenKind::Integer(1),
-                    span: Span { start: 0, end: 1 }
-                },
-                Token {
-                    kind: TokenKind::Integer(328),
-                    span: Span { start: 2, end: 5 }
-                },
-                Token {
-                    kind: TokenKind::Integer(129123),
-                    span: Span { start: 6, end: 12 }
-                },
-                Token {
-                    kind: TokenKind::Integer(8432),
-                    span: Span { start: 13, end: 17 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 17, end: 17 }
-                },
-            ]
+            token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                W(1),
+                T(TokenKind::Integer(328), 3),
+                W(1),
+                T(TokenKind::Integer(129123), 6),
+                W(1),
+                T(TokenKind::Integer(8432), 4),
+            ])
         );
     }
 
@@ -504,129 +469,60 @@ mod tests {
     fn more() {
         assert_eq!(
             tokenize_str("abcdef 1212 asnthueoa"),
-            vec![
-                Token {
-                    kind: TokenKind::Identifier("abcdef"),
-                    span: Span { start: 0, end: 6 }
-                },
-                Token {
-                    kind: TokenKind::Integer(1212),
-                    span: Span { start: 7, end: 11 }
-                },
-                Token {
-                    kind: TokenKind::Identifier("asnthueoa"),
-                    span: Span { start: 12, end: 21 }
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 21, end: 21 }
-                },
-            ]
+            token_vec(&[
+                T(TokenKind::Identifier("abcdef"), 6),
+                W(1),
+                T(TokenKind::Integer(1212), 4),
+                W(1),
+                T(TokenKind::Identifier("asnthueoa"), 9),
+            ])
         );
     }
 
     #[test]
     fn simple_operator() {
-        assert_matches!(
-            tokenize_str("-").as_slice(),
-            &[
-                Token {
-                    kind: TokenKind::Minus,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    ..
-                },
-            ]
-        );
+        assert_eq!(tokenize_str("-"), token_vec(&[T(TokenKind::Minus, 1),]));
 
-        assert_matches!(
-            tokenize_str("- + + <=").as_slice(),
-            &[
-                Token {
-                    kind: TokenKind::Minus,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Plus,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Plus,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::LessEqual,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    ..
-                },
-            ]
+        assert_eq!(
+            tokenize_str("- + + <="),
+            token_vec(&[
+                T(TokenKind::Minus, 1),
+                W(1),
+                T(TokenKind::Plus, 1),
+                W(1),
+                T(TokenKind::Plus, 1),
+                W(1),
+                T(TokenKind::LessEqual, 2),
+            ])
         );
     }
 
     #[test]
     fn test_slashslash_comment() {
-        assert_matches!(
-            tokenize_str("a///+/=0[)!{+)@#}]\nb/a").as_slice(),
-            &[
-                Token {
-                    kind: TokenKind::Identifier("a"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Identifier("b"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Slash,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Identifier("a"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    ..
-                },
-            ]
+        assert_eq!(
+            tokenize_str("a///+/=0[)!{+)@#}]\nb/a"),
+            token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                W(18),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Slash, 1),
+                T(TokenKind::Identifier("a"), 1),
+            ])
         );
     }
 
     #[test]
     fn test_hashtag_comment() {
-        assert_matches!(
-            tokenize_str("a/#/+/=0[)!{+)@#}]\nb/a").as_slice(),
-            &[
-                Token {
-                    kind: TokenKind::Identifier("a"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Slash,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Identifier("b"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Slash,
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Identifier("a"),
-                    ..
-                },
-                Token {
-                    kind: TokenKind::Eof,
-                    ..
-                },
-            ]
+        assert_eq!(
+            tokenize_str("a/#/+/=0[)!{+)@#}]\nb/a"),
+            token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::Slash, 1),
+                W(17),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Slash, 1),
+                T(TokenKind::Identifier("a"), 1),
+            ])
         );
     }
 
@@ -640,61 +536,34 @@ mod tests {
 
     #[test]
     fn test_errors() {
-        assert_matches!(
-            tokenize_str_err("a!").as_slice(),
-            &[
-                Ok(Token {
-                    kind: TokenKind::Identifier("a"),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Err(ParseError {
-                    kind: ParseErrorKind::UnexpectedEof,
-                    span: Span { start: 2, end: 2 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 2, end: 2 }
-                }),
-            ]
+        assert_eq!(
+            tokenize_str("a!"),
+            token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                W(1),
+                E(ParseErrorKind::UnexpectedEof, 0),
+            ])
         );
 
-        assert_matches!(
-            tokenize_str_err("a!a").as_slice(),
-            &[
-                Ok(Token {
-                    kind: TokenKind::Identifier("a"),
-                    span: Span { start: 0, end: 1 }
-                }),
-                Err(ParseError {
-                    kind: ParseErrorKind::ExpectedCharacter {
+        assert_eq!(
+            tokenize_str("a!a"),
+            token_vec(&[
+                T(TokenKind::Identifier("a"), 1),
+                W(1),
+                E(
+                    ParseErrorKind::ExpectedCharacter {
                         expected: '=',
                         got: 'a'
                     },
-                    span: Span { start: 2, end: 3 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Identifier("a"),
-                    span: Span { start: 2, end: 3 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 3, end: 3 }
-                }),
-            ]
+                    1
+                ),
+                T(TokenKind::Identifier("a"), 1),
+            ])
         );
 
-        assert_matches!(
-            tokenize_str_err("ä").as_slice(),
-            &[
-                Err(ParseError {
-                    kind: ParseErrorKind::UnexpectedCharacter('ä'),
-                    span: Span { start: 0, end: 2 }
-                }),
-                Ok(Token {
-                    kind: TokenKind::Eof,
-                    span: Span { start: 2, end: 2 }
-                }),
-            ]
+        assert_eq!(
+            tokenize_str("ä"),
+            token_vec(&[E(ParseErrorKind::UnexpectedCharacter('ä'), 2), W(2),])
         );
     }
 }
