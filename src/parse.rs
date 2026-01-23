@@ -11,6 +11,7 @@ pub enum Expression {
     Binary(BinaryExpression),
     Unary(UnaryExpression),
     Primary(Primary),
+    If(IfExpression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,13 @@ pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Node<Expression>>,
     rhs: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfExpression {
+    condition: Box<Node<Expression>>,
+    then: Box<Node<Expression>>,
+    els: Option<Box<Node<Expression>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +133,15 @@ impl Display for BinaryExpression {
     }
 }
 
+impl Display for IfExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.els {
+            Some(els) => write!(f, "(if {} {} {})", self.condition, self.then, els),
+            None => write!(f, "(if {} {})", self.condition, self.then),
+        }
+    }
+}
+
 impl Display for UnaryExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {})", self.operator, self.operand)
@@ -150,6 +167,7 @@ impl Display for Expression {
             Expression::Binary(binary_expression) => write!(f, "{}", binary_expression),
             Expression::Primary(primary) => write!(f, "{}", primary),
             Expression::Unary(unary_expression) => write!(f, "{}", unary_expression),
+            Expression::If(if_expression) => write!(f, "{}", if_expression),
         }
     }
 }
@@ -250,7 +268,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let op = match token.kind {
             TokenKind::Minus => UnaryOperator::Negate,
             TokenKind::Identifier("not") => UnaryOperator::Not,
-            _ => return self.parse_paren_expression(),
+            _ => return self.parse_secondary_expression(),
         };
 
         self.next().expect("already peeked");
@@ -267,47 +285,74 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
-    fn parse_paren_expression(&mut self) -> Result<Node<Expression>, ParseError> {
-        match self.peek()?.kind == TokenKind::LParen {
-            true => {
+    fn parse_secondary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+        match self.peek()?.kind {
+            TokenKind::LParen => {
                 self.next().expect("already peeked");
                 let expr = self.parse_expression()?;
                 self.expect(TokenKind::RParen)?;
 
                 Ok(expr)
             }
-            false => {
-                let primary = self.parse_primary()?;
+            TokenKind::Identifier("if") => {
+                let token = self.next().expect("already peeked");
+                let cond = self.parse_expression()?;
+                self.expect(TokenKind::Identifier("then"))?;
+                let then = self.parse_expression()?;
+
+                let els = if self.peek()?.kind == TokenKind::Identifier("else") {
+                    self.next().expect("already peeked");
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+
+                let span = token.span.to(els.as_ref().unwrap_or(&then).span);
 
                 Ok(Node {
-                    item: Expression::Primary(primary.item),
-                    span: primary.span,
+                    item: Expression::If(IfExpression {
+                        condition: Box::new(cond),
+                        then: Box::new(then),
+                        els: els.map(Box::new),
+                    }),
+                    span,
                 })
             }
+            _ => match self.parse_primary() {
+                Some(primary) => Ok(Node {
+                    item: Expression::Primary(primary.item),
+                    span: primary.span,
+                }),
+                None => Err(ParseError {
+                    kind: ParseErrorKind::ExpectedTokens(&[
+                        "boolean",
+                        "integer",
+                        "identifier",
+                        "parentheses",
+                        "if expression",
+                    ]),
+                    span: self.peek()?.span,
+                }),
+            },
         }
     }
 
-    fn parse_primary(&mut self) -> Result<Node<Primary>, ParseError> {
-        let token = self.next()?;
-        expect_some(&token)?;
+    fn parse_primary(&mut self) -> Option<Node<Primary>> {
+        let token = self.peek().ok()?;
+        expect_some(token).ok()?;
 
         let item = match token.kind {
             TokenKind::Identifier("true") => Primary::Bool(true),
             TokenKind::Identifier("false") => Primary::Bool(false),
             TokenKind::Integer(int) => Primary::Integer(int),
             TokenKind::Identifier(x) => Primary::Identifier(Identifier(x.to_string())),
-            _ => {
-                return Err(ParseError {
-                    kind: ParseErrorKind::ExpectedTokens(&["boolean", "integer", "identifier"]),
-                    span: token.span,
-                });
-            }
+            _ => return None,
         };
 
-        Ok(Node {
-            item,
-            span: token.span,
-        })
+        let span = token.span;
+        self.next().expect("already peeked");
+
+        Some(Node { item, span })
     }
 
     fn peek(&mut self) -> Result<&Token<'code>, ParseError> {
@@ -381,7 +426,7 @@ mod tests {
     fn test_literal() {
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("true"), 4)])).parse_primary(),
-            Ok(Node {
+            Some(Node {
                 item: Primary::Bool(true),
                 span: Span { start: 0, end: 4 },
             })
@@ -389,7 +434,7 @@ mod tests {
 
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("false"), 5)])).parse_primary(),
-            Ok(Node {
+            Some(Node {
                 item: Primary::Bool(false),
                 span: Span { start: 0, end: 5 },
             })
@@ -397,7 +442,7 @@ mod tests {
 
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Integer(1234), 4)])).parse_primary(),
-            Ok(Node {
+            Some(Node {
                 item: Primary::Integer(1234),
                 span: Span { start: 0, end: 4 },
             })
@@ -405,7 +450,7 @@ mod tests {
 
         assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("hello"), 5)])).parse_primary(),
-            Ok(Node {
+            Some(Node {
                 item: Primary::Identifier(Identifier(String::from("hello"))),
                 span: Span { start: 0, end: 5 },
             })
@@ -591,7 +636,13 @@ mod tests {
         assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Minus, 1),])).parse_expression(),
             Err(ParseError {
-                kind: ParseErrorKind::UnexpectedEof,
+                kind: ParseErrorKind::ExpectedTokens(&[
+                    "boolean",
+                    "integer",
+                    "identifier",
+                    "parentheses",
+                    "if expression"
+                ]),
                 span: Span { start: 1, end: 1 }
             })
         );
@@ -604,9 +655,82 @@ mod tests {
             ]))
             .parse_expression(),
             Err(ParseError {
-                kind: ParseErrorKind::ExpectedTokens(&["boolean", "integer", "identifier"]),
+                kind: ParseErrorKind::ExpectedTokens(&[
+                    "boolean",
+                    "integer",
+                    "identifier",
+                    "parentheses",
+                    "if expression"
+                ]),
                 span: Span { start: 2, end: 3 }
             })
+        );
+    }
+
+    #[test]
+    fn test_if() {
+        // 1 + if a == b then c * 3
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 2),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::EqualEqual, 2),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::Asterisk, 1),
+                T(TokenKind::Integer(3), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(+ 1 (if (== a b) (* c 3)))"
+        );
+
+        // if a == b then c + d else e
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::EqualEqual, 2),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Identifier("d"), 1),
+                T(TokenKind::Identifier("else"), 4),
+                T(TokenKind::Identifier("e"), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(if (== a b) (+ c d) e)"
+        );
+
+        // if if a then b then if c then d else e else f
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Identifier("d"), 1),
+                T(TokenKind::Identifier("else"), 4),
+                T(TokenKind::Identifier("e"), 1),
+                T(TokenKind::Identifier("else"), 4),
+                T(TokenKind::Identifier("f"), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(if (if a b) (if c d e) f)"
         );
     }
 }
