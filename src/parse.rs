@@ -187,8 +187,8 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
     fn parse_expression(&mut self) -> Result<Node<Expression>, ParseError> {
         let lhs = self.parse_expression_left(0)?;
 
-        if self.peek().unwrap().kind == TokenKind::Equal {
-            self.next();
+        if self.peek()?.kind == TokenKind::Equal {
+            self.next().expect("already peeked");
 
             let rhs = self.parse_expression()?;
             let span = lhs.span.to(rhs.span);
@@ -217,11 +217,10 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let mut lhs = self.parse_expression_left(level + 1)?;
 
         loop {
-            // FIXME: handle tokenization errors
-            let token = self.peek().unwrap();
+            let token = self.peek()?;
 
             if ops.contains(&token.kind) {
-                let token = self.next().expect("already peeked, it's fine");
+                let token = self.next().expect("already peeked");
 
                 let op = BinaryOperator::try_from(token.kind)
                     .expect("already know the token is a binary operator");
@@ -245,7 +244,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
     }
 
     fn parse_unary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
-        let token = self.peek().unwrap();
+        let token = self.peek()?;
         let token_span = token.span;
 
         let op = match token.kind {
@@ -254,7 +253,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             _ => return self.parse_paren_expression(),
         };
 
-        self.next();
+        self.next().expect("already peeked");
 
         let rhs = self.parse_unary_expression()?;
         let rhs_span = rhs.span;
@@ -269,9 +268,9 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
     }
 
     fn parse_paren_expression(&mut self) -> Result<Node<Expression>, ParseError> {
-        match self.peek().unwrap().kind == TokenKind::LParen {
+        match self.peek()?.kind == TokenKind::LParen {
             true => {
-                self.next();
+                self.next().expect("already peeked");
                 let expr = self.parse_expression()?;
                 self.expect(TokenKind::RParen)?;
 
@@ -290,14 +289,19 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
     fn parse_primary(&mut self) -> Result<Node<Primary>, ParseError> {
         let token = self.next()?;
+        expect_some(&token)?;
 
         let item = match token.kind {
             TokenKind::Identifier("true") => Primary::Bool(true),
             TokenKind::Identifier("false") => Primary::Bool(false),
             TokenKind::Integer(int) => Primary::Integer(int),
             TokenKind::Identifier(x) => Primary::Identifier(Identifier(x.to_string())),
-            TokenKind::LParen => todo!(),
-            _ => todo!("invalid {:?}", token.kind),
+            _ => {
+                return Err(ParseError {
+                    kind: ParseErrorKind::ExpectedTokens(&["boolean", "integer", "identifier"]),
+                    span: token.span,
+                });
+            }
         };
 
         Ok(Node {
@@ -306,27 +310,44 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
-    fn peek(&mut self) -> Result<&Token<'code>, &ParseError> {
+    fn peek(&mut self) -> Result<&Token<'code>, ParseError> {
         // FIXME: unwrap
-        self.tokens.peek().unwrap().as_ref()
+        self.tokens.peek().unwrap().as_ref().map_err(|err| *err)
     }
 
     fn next(&mut self) -> Result<Token<'code>, ParseError> {
-        // FIXME: unwrap
-        self.tokens.next().unwrap()
+        // only advance if eof is not reached yet
+        match self.peek() {
+            Ok(Token {
+                kind: TokenKind::Eof,
+                ..
+            }) => self.peek().cloned(), // cheap clone if eof
+            _ => self.tokens.next().unwrap(),
+        }
     }
 
-    fn expect(&mut self, token_kind: TokenKind<'_>) -> Result<(), ParseError> {
+    fn expect(&mut self, token_kind: TokenKind<'static>) -> Result<(), ParseError> {
         let tok = self.next()?;
 
         if tok.kind == token_kind {
             Ok(())
         } else {
             Err(ParseError {
-                kind: ParseErrorKind::UnexpectedToken,
+                kind: ParseErrorKind::ExpectedToken(token_kind),
                 span: tok.span,
             })
         }
+    }
+}
+
+/// Returns an error of [`ParseErrorKind::UnexpectedEof`] if the token is [`TokenKind::Eof`]
+fn expect_some(token: &Token<'_>) -> Result<(), ParseError> {
+    match token.kind {
+        TokenKind::Eof => Err(ParseError {
+            kind: ParseErrorKind::UnexpectedEof,
+            span: token.span,
+        }),
+        _ => Ok(()),
     }
 }
 
@@ -562,6 +583,30 @@ mod tests {
             .unwrap()
             .to_string(),
             "(+ 2 3)"
+        );
+    }
+
+    #[test]
+    fn test_expr_errors() {
+        assert_eq!(
+            quick_parser(&token_vec(&[T(TokenKind::Minus, 1),])).parse_expression(),
+            Err(ParseError {
+                kind: ParseErrorKind::UnexpectedEof,
+                span: Span { start: 1, end: 1 }
+            })
+        );
+
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Plus, 1),
+            ]))
+            .parse_expression(),
+            Err(ParseError {
+                kind: ParseErrorKind::ExpectedTokens(&["boolean", "integer", "identifier"]),
+                span: Span { start: 2, end: 3 }
+            })
         );
     }
 }

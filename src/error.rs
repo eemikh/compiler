@@ -1,11 +1,12 @@
-use crate::Span;
+use crate::{Span, token::TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseErrorKind {
     UnexpectedCharacter(char),
     ExpectedCharacter { expected: char, got: char },
     IntegerOverflow,
-    UnexpectedToken,
+    ExpectedToken(TokenKind<'static>),
+    ExpectedTokens(&'static [&'static str]),
     UnexpectedEof,
 }
 
