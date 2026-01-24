@@ -200,7 +200,11 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             }
             TokenKind::LBrace => self.parse_block_expression(),
             _ => match self.parse_primary() {
-                Some(primary) => Ok(self.node(Expression::Primary(primary.item), primary.span)),
+                Some(primary) => Ok(Node {
+                    id: primary.id,
+                    item: Expression::Primary(primary.item),
+                    span: primary.span,
+                }),
                 None => Err(ParseError {
                     kind: ParseErrorKind::ExpectedTokens(&[
                         "boolean",
