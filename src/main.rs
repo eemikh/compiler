@@ -1,9 +1,7 @@
 #![feature(assert_matches)]
 use std::env::args;
 
-mod error;
-mod parse;
-mod token;
+mod syntax;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Span {

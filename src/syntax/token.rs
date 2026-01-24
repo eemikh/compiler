@@ -1,6 +1,6 @@
 use crate::{
     Source, Span,
-    error::{ParseError, ParseErrorKind},
+    syntax::{ParseError, ParseErrorKind},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

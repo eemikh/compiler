@@ -2,8 +2,8 @@ use std::{fmt::Display, iter::Peekable};
 
 use crate::{
     Span,
-    error::{ParseError, ParseErrorKind},
-    token::{Token, TokenKind},
+    syntax::token::{Token, TokenKind},
+    syntax::{ParseError, ParseErrorKind},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -656,8 +656,8 @@ fn parse<'code>(tokens: impl Iterator<Item = Result<Token<'code>, ParseError>>) 
 mod tests {
     use std::assert_matches::assert_matches;
 
-    use crate::token::tests::{Tok::*, token_vec};
-    use crate::{Span, token::TokenKind};
+    use crate::syntax::token::tests::{Tok::*, token_vec};
+    use crate::{Span, syntax::token::TokenKind};
 
     use super::*;
 
