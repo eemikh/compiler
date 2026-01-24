@@ -7,6 +7,7 @@ pub enum ParseErrorKind {
     IntegerOverflow,
     ExpectedToken(TokenKind<'static>),
     ExpectedTokens(&'static [&'static str]),
+    ExpectedIdentifier,
     UnexpectedEof,
 }
 

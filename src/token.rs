@@ -48,6 +48,15 @@ pub enum TokenKind<'a> {
     Eof,
 }
 
+impl TokenKind<'_> {
+    pub fn identifier(&self) -> Option<&str> {
+        match self {
+            TokenKind::Identifier(identifier) => Some(identifier),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'code> {
     pub kind: TokenKind<'code>,

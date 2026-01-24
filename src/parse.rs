@@ -15,6 +15,7 @@ pub enum Expression {
     While(WhileExpression),
     Call(CallExpression),
     Block(BlockExpression),
+    Var(VarExpression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,13 @@ pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Node<Expression>>,
     rhs: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VarExpression {
+    name: Identifier,
+    typ: Option<Identifier>,
+    value: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,6 +156,12 @@ impl Display for Primary {
     }
 }
 
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl Display for BinaryExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {} {})", self.operator, self.lhs, self.rhs)
@@ -172,6 +186,15 @@ impl Display for WhileExpression {
 impl Display for UnaryExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {})", self.operator, self.operand)
+    }
+}
+
+impl Display for VarExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.typ {
+            Some(typ) => write!(f, "(var {} {} {})", self.name, typ, self.value),
+            None => write!(f, "(var {} {})", self.name, self.value),
+        }
     }
 }
 
@@ -225,6 +248,7 @@ impl Display for Expression {
             Expression::While(while_expression) => write!(f, "{}", while_expression),
             Expression::Call(call_expression) => write!(f, "{}", call_expression),
             Expression::Block(block_expression) => write!(f, "{}", block_expression),
+            Expression::Var(var_expression) => write!(f, "{}", var_expression),
         }
     }
 }
@@ -424,12 +448,25 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
     fn parse_block_expression(&mut self) -> Result<Node<Expression>, ParseError> {
         let start = self.expect(TokenKind::LBrace)?.span;
+        let body = self.parse_block_body()?;
+        let end = self.expect(TokenKind::RBrace)?.span;
 
+        Ok(Node {
+            item: Expression::Block(body),
+            span: start.to(end),
+        })
+    }
+
+    fn parse_block_body(&mut self) -> Result<BlockExpression, ParseError> {
         let mut exprs = Vec::new();
         let mut ret_expression = None;
 
-        while self.peek()?.kind != TokenKind::RBrace {
-            let expr = self.parse_expression()?;
+        // block bodies are either the module, which ends in eof or a { } block
+        while !&[TokenKind::RBrace, TokenKind::Eof].contains(&self.peek()?.kind) {
+            let expr = match self.peek()?.kind {
+                TokenKind::Identifier("var") => self.parse_var_declaration()?,
+                _ => self.parse_expression()?,
+            };
 
             if self.peek()?.kind == TokenKind::Semicolon {
                 self.next().expect("already peeked");
@@ -440,14 +477,49 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             }
         }
 
-        let end = self.expect(TokenKind::RBrace)?.span;
+        Ok(BlockExpression {
+            expressions: exprs,
+            result_expression: ret_expression.map(Box::new),
+        })
+    }
+
+    fn parse_var_declaration(&mut self) -> Result<Node<Expression>, ParseError> {
+        let start = self.expect(TokenKind::Identifier("var"))?.span;
+
+        let name = Identifier(
+            self.expect_identifier()?
+                .kind
+                .identifier()
+                .expect("expected identifier already")
+                .to_string(),
+        );
+
+        let typ = match self.peek()?.kind {
+            TokenKind::Colon => {
+                self.next().expect("already peeked");
+                Some(Identifier(
+                    self.expect_identifier()?
+                        .kind
+                        .identifier()
+                        .expect("expected identifier already")
+                        .to_string(),
+                ))
+            }
+            _ => None,
+        };
+
+        self.expect(TokenKind::Equal)?;
+
+        let value = self.parse_expression()?;
+        let span = start.to(value.span);
 
         Ok(Node {
-            item: Expression::Block(BlockExpression {
-                expressions: exprs,
-                result_expression: ret_expression.map(Box::new),
+            item: Expression::Var(VarExpression {
+                name,
+                typ,
+                value: Box::new(value),
             }),
-            span: start.to(end),
+            span,
         })
     }
 
@@ -527,6 +599,18 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                 kind: ParseErrorKind::ExpectedToken(token_kind),
                 span: tok.span,
             })
+        }
+    }
+
+    fn expect_identifier(&mut self) -> Result<Token<'code>, ParseError> {
+        let tok = self.next()?;
+
+        match tok.kind {
+            TokenKind::Identifier(_) => Ok(tok),
+            _ => Err(ParseError {
+                kind: ParseErrorKind::ExpectedIdentifier,
+                span: tok.span,
+            }),
         }
     }
 }
@@ -1002,6 +1086,41 @@ mod tests {
             .unwrap()
             .to_string(),
             "(while test (+ 1 1))"
+        );
+    }
+
+    #[test]
+    fn test_var() {
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("var"), 3),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (var test 1))"
+        );
+
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("var"), 3),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Colon, 1),
+                T(TokenKind::Identifier("int"), 4),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (var test int 1))"
         );
     }
 }
