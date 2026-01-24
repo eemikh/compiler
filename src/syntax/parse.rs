@@ -20,47 +20,47 @@ pub enum Expression {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryExpression {
-    operator: BinaryOperator,
-    lhs: Box<Node<Expression>>,
-    rhs: Box<Node<Expression>>,
+    pub operator: BinaryOperator,
+    pub lhs: Box<Node<Expression>>,
+    pub rhs: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarExpression {
-    name: Identifier,
-    typ: Option<Identifier>,
-    value: Box<Node<Expression>>,
+    pub name: Identifier,
+    pub typ: Option<Identifier>,
+    pub value: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpression {
-    expressions: Vec<Node<Expression>>,
-    result_expression: Option<Box<Node<Expression>>>,
+    pub expressions: Vec<Node<Expression>>,
+    pub result_expression: Option<Box<Node<Expression>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallExpression {
-    function: Box<Node<Expression>>,
-    args: Vec<Node<Expression>>,
+    pub function: Box<Node<Expression>>,
+    pub args: Vec<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfExpression {
-    condition: Box<Node<Expression>>,
-    then: Box<Node<Expression>>,
-    els: Option<Box<Node<Expression>>>,
+    pub condition: Box<Node<Expression>>,
+    pub then: Box<Node<Expression>>,
+    pub els: Option<Box<Node<Expression>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WhileExpression {
-    condition: Box<Node<Expression>>,
-    body: Box<Node<Expression>>,
+    pub condition: Box<Node<Expression>>,
+    pub body: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnaryExpression {
-    operator: UnaryOperator,
-    operand: Box<Node<Expression>>,
+    pub operator: UnaryOperator,
+    pub operand: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,13 +131,13 @@ pub enum Primary {
     Identifier(Identifier),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identifier(String);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identifier(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node<T> {
-    item: T,
-    span: Span,
+    pub item: T,
+    pub span: Span,
 }
 
 impl<T: Display> Display for Node<T> {

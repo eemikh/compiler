@@ -2,6 +2,7 @@
 use std::env::args;
 
 mod syntax;
+mod types;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Span {
