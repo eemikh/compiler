@@ -280,6 +280,7 @@ impl Display for BinaryOperator {
 
 struct Parser<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> {
     tokens: Peekable<It>,
+    can_skip_semicolon: bool,
 }
 
 impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code, It> {
@@ -459,23 +460,33 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
     fn parse_block_body(&mut self) -> Result<BlockExpression, ParseError> {
         let mut exprs = Vec::new();
-        let mut ret_expression = None;
+        let mut had_semicolon = false;
 
-        // block bodies are either the module, which ends in eof or a { } block
+        // block bodies are either the module, which ends in eof, or in a { } block
         while !&[TokenKind::RBrace, TokenKind::Eof].contains(&self.peek()?.kind) {
             let expr = match self.peek()?.kind {
                 TokenKind::Identifier("var") => self.parse_var_declaration()?,
                 _ => self.parse_expression()?,
             };
 
+            exprs.push(expr);
+
             if self.peek()?.kind == TokenKind::Semicolon {
+                had_semicolon = true;
                 self.next().expect("already peeked");
-                exprs.push(expr);
             } else {
-                ret_expression = Some(expr);
-                break;
+                had_semicolon = false;
+
+                if !self.can_skip_semicolon {
+                    break;
+                }
             }
         }
+
+        let ret_expression = match had_semicolon {
+            true => None,
+            false => exprs.pop(),
+        };
 
         Ok(BlockExpression {
             expressions: exprs,
@@ -580,13 +591,20 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
     fn next(&mut self) -> Result<Token<'code>, ParseError> {
         // only advance if eof is not reached yet
-        match self.peek() {
+        let token = match self.peek() {
             Ok(Token {
                 kind: TokenKind::Eof,
                 ..
             }) => self.peek().cloned(), // cheap clone if eof
             _ => self.tokens.next().unwrap(),
+        }?;
+
+        match token.kind {
+            TokenKind::RBrace => self.can_skip_semicolon = true,
+            _ => self.can_skip_semicolon = false,
         }
+
+        Ok(token)
     }
 
     fn expect(&mut self, token_kind: TokenKind<'static>) -> Result<Token<'code>, ParseError> {
@@ -649,6 +667,7 @@ mod tests {
     ) -> Parser<'a, impl Iterator<Item = Result<Token<'a>, ParseError>>> {
         Parser {
             tokens: tokens.iter().cloned().peekable(),
+            can_skip_semicolon: false,
         }
     }
 
@@ -1068,6 +1087,164 @@ mod tests {
             .unwrap()
             .to_string(),
             "(+ 1 (block (* (block 1 2) 3)))"
+        );
+
+        // {{1}{2}}
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (block 1) (block 2))"
+        );
+
+        // {{1};{2}}
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (block 1) (block 2))"
+        );
+
+        // { a b }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression(),
+            Err(ParseError {
+                kind: ParseErrorKind::ExpectedToken(TokenKind::RBrace),
+                span: Span { start: 2, end: 3 }
+            })
+        );
+
+        // { if true then { a } b }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("true"), 4),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (if true (block a)) b)"
+        );
+
+        // { if true then { a }; b }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("true"), 4),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (if true (block a)) b)"
+        );
+
+        // { if true then { a } b; c }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("true"), 4),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (if true (block a)) b c)"
+        );
+
+        // { if true then { a } else { b } c }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("true"), 4),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Identifier("else"), 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Identifier("c"), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (if true (block a) (block b)) c)"
+        );
+
+        // x = { { f(a) } { b } }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("x"), 1),
+                T(TokenKind::Equal, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("f"), 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RParen, 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("b"), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(= x (block (block (call f a)) (block b)))"
         );
     }
 
