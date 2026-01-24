@@ -1,10 +1,10 @@
 use std::iter::Peekable;
 
 use crate::syntax::{
-    ParseError, ParseErrorKind,
+    ParseError, ParseErrorKind, Span,
     ast::{
         BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression, Identifier,
-        IfExpression, Node, Primary, UnaryExpression, UnaryOperator, VarExpression,
+        IfExpression, Module, Node, Primary, UnaryExpression, UnaryOperator, VarExpression,
         WhileExpression,
     },
     token::{Token, TokenKind},
@@ -263,6 +263,19 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
+    fn parse_module(&mut self) -> Result<Node<Module>, ParseError> {
+        let body = self.parse_block_body()?;
+        let end = self.expect(TokenKind::Eof)?.span;
+
+        Ok(Node {
+            item: Module { body },
+            span: Span {
+                start: 0,
+                end: end.start,
+            },
+        })
+    }
+
     fn parse_var_declaration(&mut self) -> Result<Node<Expression>, ParseError> {
         let start = self.expect(TokenKind::Identifier("var"))?.span;
 
@@ -413,12 +426,15 @@ fn expect_some(token: &Token<'_>) -> Result<(), ParseError> {
     }
 }
 
-fn parse<'code>(tokens: impl Iterator<Item = Result<Token<'code>, ParseError>>) {
-    let tokens = tokens.peekable();
+pub fn parse<'code>(
+    tokens: impl Iterator<Item = Result<Token<'code>, ParseError>>,
+) -> Result<Node<Module>, ParseError> {
+    let mut parser = Parser {
+        tokens: tokens.peekable(),
+        can_skip_semicolon: false,
+    };
 
-    for token in tokens {
-        dbg!(token);
-    }
+    parser.parse_module()
 }
 
 #[cfg(test)]
@@ -1068,6 +1084,31 @@ mod tests {
             .unwrap()
             .to_string(),
             "(block (var test int 1))"
+        );
+    }
+
+    #[test]
+    fn test_module() {
+        assert_eq!(
+            parse(
+                token_vec(&[
+                    T(TokenKind::Identifier("var"), 3),
+                    T(TokenKind::Identifier("a"), 1),
+                    T(TokenKind::Equal, 1),
+                    T(TokenKind::Integer(1), 1),
+                    T(TokenKind::Semicolon, 1),
+                    T(TokenKind::Identifier("a"), 1),
+                    T(TokenKind::Equal, 1),
+                    T(TokenKind::Identifier("a"), 1),
+                    T(TokenKind::Plus, 1),
+                    T(TokenKind::Integer(2), 1),
+                    T(TokenKind::Semicolon, 1),
+                ])
+                .into_iter()
+            )
+            .unwrap()
+            .to_string(),
+            "(block (var a 1) (= a (+ a 2)) ())"
         );
     }
 }

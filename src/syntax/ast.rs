@@ -3,6 +3,11 @@ use std::fmt::Display;
 use crate::syntax::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Module {
+    pub body: BlockExpression,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Binary(BinaryExpression),
     Unary(UnaryExpression),
@@ -118,6 +123,12 @@ impl Display for Primary {
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.body)
     }
 }
 
