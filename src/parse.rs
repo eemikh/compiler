@@ -13,6 +13,7 @@ pub enum Expression {
     Primary(Primary),
     If(IfExpression),
     Call(CallExpression),
+    Block(BlockExpression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +21,12 @@ pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Node<Expression>>,
     rhs: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockExpression {
+    expressions: Vec<Node<Expression>>,
+    result_expression: Option<Box<Node<Expression>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +174,21 @@ impl Display for CallExpression {
     }
 }
 
+impl Display for BlockExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(block")?;
+
+        for expr in &self.expressions {
+            write!(f, " {}", expr)?;
+        }
+
+        match &self.result_expression {
+            Some(expr) => write!(f, " {})", expr),
+            None => write!(f, " ())"),
+        }
+    }
+}
+
 impl Display for UnaryOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -188,6 +210,7 @@ impl Display for Expression {
             Expression::Unary(unary_expression) => write!(f, "{}", unary_expression),
             Expression::If(if_expression) => write!(f, "{}", if_expression),
             Expression::Call(call_expression) => write!(f, "{}", call_expression),
+            Expression::Block(block_expression) => write!(f, "{}", block_expression),
         }
     }
 }
@@ -344,6 +367,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
                 Ok(expr)
             }
+            TokenKind::LBrace => self.parse_block_expression(),
             _ => match self.parse_primary() {
                 Some(primary) => Ok(Node {
                     item: Expression::Primary(primary.item),
@@ -367,6 +391,35 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         }
 
         Ok(expr)
+    }
+
+    fn parse_block_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+        let start = self.expect(TokenKind::LBrace)?.span;
+
+        let mut exprs = Vec::new();
+        let mut ret_expression = None;
+
+        while self.peek()?.kind != TokenKind::RBrace {
+            let expr = self.parse_expression()?;
+
+            if self.peek()?.kind == TokenKind::Semicolon {
+                self.next().expect("already peeked");
+                exprs.push(expr);
+            } else {
+                ret_expression = Some(expr);
+                break;
+            }
+        }
+
+        let end = self.expect(TokenKind::RBrace)?.span;
+
+        Ok(Node {
+            item: Expression::Block(BlockExpression {
+                expressions: exprs,
+                result_expression: ret_expression.map(Box::new),
+            }),
+            span: start.to(end),
+        })
     }
 
     fn parse_call(&mut self, function: Node<Expression>) -> Result<Node<Expression>, ParseError> {
@@ -851,6 +904,57 @@ mod tests {
             .unwrap()
             .to_string(),
             "(call (call (+ test 1)) a)"
+        );
+    }
+
+    #[test]
+    fn test_block() {
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block test ())"
+        );
+
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::Identifier("test1"), 5),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block test test1)"
+        );
+
+        // 1+{{1;2}*3}
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Semicolon, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Asterisk, 1),
+                T(TokenKind::Integer(3), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(+ 1 (block (* (block 1 2) 3)))"
         );
     }
 }
