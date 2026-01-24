@@ -254,6 +254,15 @@ mod tests {
         typecheck(&ast)
     }
 
+    fn module_to_typ(code: &str) -> Result<Typ, TypErrorKind> {
+        let ast = parse(code).0.unwrap();
+        Ok(typecheck(&ast)?
+            .typs
+            .get(&ast.root.body.id)
+            .unwrap()
+            .clone())
+    }
+
     #[allow(non_snake_case)]
     fn N(id: u32) -> NodeId {
         NodeId(id)
@@ -265,5 +274,10 @@ mod tests {
             str_to_typemap("").unwrap().typs,
             HashMap::from([(N(0), Typ::Unit)])
         );
+
+        assert_eq!(module_to_typ("1+1").unwrap(), Typ::Int);
+        assert_eq!(module_to_typ("not not true").unwrap(), Typ::Bool);
+        assert_eq!(module_to_typ("if true then 1").unwrap(), Typ::Unit);
+        assert_eq!(module_to_typ("if true then 1 else 2").unwrap(), Typ::Int);
     }
 }
