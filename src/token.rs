@@ -43,6 +43,8 @@ pub enum TokenKind<'a> {
     Comma,
     /// `;`
     Semicolon,
+    /// `:`
+    Colon,
     Eof,
 }
 
@@ -128,6 +130,7 @@ impl<'source, 'code> Tokenizer<'source, 'code> {
             '}' => TokenKind::RBrace,
             ',' => TokenKind::Comma,
             ';' => TokenKind::Semicolon,
+            ':' => TokenKind::Colon,
 
             // potential multicharacter operators
             '<' => {
