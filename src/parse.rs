@@ -12,6 +12,7 @@ pub enum Expression {
     Unary(UnaryExpression),
     Primary(Primary),
     If(IfExpression),
+    While(WhileExpression),
     Call(CallExpression),
     Block(BlockExpression),
 }
@@ -40,6 +41,12 @@ pub struct IfExpression {
     condition: Box<Node<Expression>>,
     then: Box<Node<Expression>>,
     els: Option<Box<Node<Expression>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhileExpression {
+    condition: Box<Node<Expression>>,
+    body: Box<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +163,12 @@ impl Display for IfExpression {
     }
 }
 
+impl Display for WhileExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(while {} {})", self.condition, self.body)
+    }
+}
+
 impl Display for UnaryExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {})", self.operator, self.operand)
@@ -209,6 +222,7 @@ impl Display for Expression {
             Expression::Primary(primary) => write!(f, "{}", primary),
             Expression::Unary(unary_expression) => write!(f, "{}", unary_expression),
             Expression::If(if_expression) => write!(f, "{}", if_expression),
+            Expression::While(while_expression) => write!(f, "{}", while_expression),
             Expression::Call(call_expression) => write!(f, "{}", call_expression),
             Expression::Block(block_expression) => write!(f, "{}", block_expression),
         }
@@ -350,6 +364,21 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                         condition: Box::new(cond),
                         then: Box::new(then),
                         els: els.map(Box::new),
+                    }),
+                    span,
+                })
+            }
+            TokenKind::Identifier("while") => {
+                let token = self.next().expect("already peeked");
+                let cond = self.parse_expression()?;
+                self.expect(TokenKind::Identifier("do"))?;
+                let body = self.parse_expression()?;
+                let span = token.span.to(body.span);
+
+                Ok(Node {
+                    item: Expression::While(WhileExpression {
+                        condition: Box::new(cond),
+                        body: Box::new(body),
                     }),
                     span,
                 })
@@ -955,6 +984,24 @@ mod tests {
             .unwrap()
             .to_string(),
             "(+ 1 (block (* (block 1 2) 3)))"
+        );
+    }
+
+    #[test]
+    fn test_while() {
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("while"), 4),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Identifier("do"), 2),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(1), 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(while test (+ 1 1))"
         );
     }
 }
