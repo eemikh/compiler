@@ -1,17 +1,24 @@
 use std::{collections::HashMap, str::FromStr};
 
-use crate::syntax::ast::{BinaryOperator, Expression, Identifier, Node, Primary, UnaryOperator};
+use crate::syntax::ast::{
+    Ast, BinaryOperator, Expression, Identifier, Module, Node, NodeId, Primary, UnaryOperator,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypErrorKind {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Typ {
+pub enum Typ {
     Int,
     Bool,
     Unit,
     // TODO: make clone great again
     Function { params: Vec<Typ>, ret: Box<Typ> },
+}
+
+#[derive(Debug, Clone)]
+pub struct TypMap {
+    pub typs: HashMap<NodeId, Typ>,
 }
 
 impl FromStr for Typ {
@@ -31,6 +38,7 @@ struct Environment {
     /// A mapping of variables in all scopes by their identifiers to their types. The last element
     /// in the vector is the innermost scope.
     variables: Vec<HashMap<Identifier, Typ>>,
+    typmap: TypMap,
 }
 
 impl Environment {
@@ -40,6 +48,9 @@ impl Environment {
                 Identifier(String::from("print_int")),
                 Typ::Int,
             )])],
+            typmap: TypMap {
+                typs: HashMap::new(),
+            },
         }
     }
 
@@ -78,11 +89,26 @@ impl Environment {
     }
 }
 
+fn typecheck(ast: &Ast) -> Result<TypMap, TypErrorKind> {
+    let mut env = Environment::new();
+    typecheck_module(&mut env, &ast.root)?;
+
+    for id in (0..ast.nodes).map(NodeId) {
+        assert!(env.typmap.typs.contains_key(&id));
+    }
+
+    Ok(env.typmap)
+}
+
+fn typecheck_module(env: &mut Environment, module: &Module) -> Result<Typ, TypErrorKind> {
+    typecheck_expression(env, &module.body)
+}
+
 fn typecheck_expression(
     env: &mut Environment,
     expression: &Node<Expression>,
 ) -> Result<Typ, TypErrorKind> {
-    match &expression.item {
+    let typ = match &expression.item {
         Expression::Binary(binary_expression) => match binary_expression.operator {
             BinaryOperator::Or
             | BinaryOperator::And
@@ -97,7 +123,7 @@ fn typecheck_expression(
                     typecheck_expression(env, &binary_expression.rhs)?
                 );
 
-                Ok(Typ::Unit)
+                Typ::Unit
             }
             BinaryOperator::Add
             | BinaryOperator::Subtract
@@ -109,13 +135,13 @@ fn typecheck_expression(
                     typecheck_expression(env, &binary_expression.rhs)?
                 );
 
-                Ok(Typ::Int)
+                Typ::Int
             }
             BinaryOperator::Equals => {
                 let tgt_typ = typecheck_expression(env, &binary_expression.lhs)?;
                 assert_eq!(tgt_typ, typecheck_expression(env, &binary_expression.rhs)?);
 
-                Ok(tgt_typ)
+                tgt_typ
             }
         },
         Expression::Unary(unary_expression) => match unary_expression.operator {
@@ -125,7 +151,7 @@ fn typecheck_expression(
                     Typ::Bool
                 );
 
-                Ok(Typ::Bool)
+                Typ::Bool
             }
             UnaryOperator::Negate => {
                 assert_eq!(
@@ -133,14 +159,14 @@ fn typecheck_expression(
                     Typ::Int
                 );
 
-                Ok(Typ::Int)
+                Typ::Int
             }
         },
         Expression::Primary(primary) => match primary {
-            Primary::Bool(_) => Ok(Typ::Bool),
-            Primary::Integer(_) => Ok(Typ::Int),
+            Primary::Bool(_) => Typ::Bool,
+            Primary::Integer(_) => Typ::Int,
             // FIXME: unwrap
-            Primary::Identifier(identifier) => Ok(env.lookup_variable(identifier).unwrap().clone()),
+            Primary::Identifier(identifier) => env.lookup_variable(identifier).unwrap().clone(),
         },
         Expression::If(if_expression) => {
             assert_eq!(
@@ -154,12 +180,12 @@ fn typecheck_expression(
                     let els_typ = typecheck_expression(env, els_expression)?;
                     assert_eq!(then_typ, els_typ);
 
-                    Ok(then_typ)
+                    then_typ
                 }
                 None => {
                     typecheck_expression(env, &if_expression.then)?;
 
-                    Ok(Typ::Unit)
+                    Typ::Unit
                 }
             }
         }
@@ -169,7 +195,7 @@ fn typecheck_expression(
                 Typ::Bool
             );
 
-            typecheck_expression(env, &while_expression.body)
+            typecheck_expression(env, &while_expression.body)?
         }
         Expression::Call(call_expression) => {
             let f_typ = typecheck_expression(env, &call_expression.function)?;
@@ -182,7 +208,7 @@ fn typecheck_expression(
                         assert_eq!(*expected, typecheck_expression(env, expr)?);
                     }
 
-                    Ok(*ret)
+                    *ret
                 }
                 _ => todo!(),
             }
@@ -196,7 +222,7 @@ fn typecheck_expression(
                 Some(expr) => typecheck_expression(env, expr),
                 None => Ok(Typ::Unit),
             }
-        }),
+        })?,
         Expression::Var(var_expression) => {
             let typ = typecheck_expression(env, &var_expression.value)?;
 
@@ -207,7 +233,37 @@ fn typecheck_expression(
 
             env.set_variable_typ(var_expression.name.clone(), typ);
 
-            Ok(Typ::Unit)
+            Typ::Unit
         }
+    };
+
+    assert!(!env.typmap.typs.contains_key(&expression.id));
+    env.typmap.typs.insert(expression.id, typ.clone());
+
+    Ok(typ)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::syntax::parse;
+
+    use super::*;
+
+    fn str_to_typemap(code: &str) -> Result<TypMap, TypErrorKind> {
+        let ast = parse(code).0.unwrap();
+        typecheck(&ast)
+    }
+
+    #[allow(non_snake_case)]
+    fn N(id: u32) -> NodeId {
+        NodeId(id)
+    }
+
+    #[test]
+    fn test_simple() {
+        assert_eq!(
+            str_to_typemap("").unwrap().typs,
+            HashMap::from([(N(0), Typ::Unit)])
+        );
     }
 }

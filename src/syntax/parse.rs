@@ -265,17 +265,19 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
-    fn parse_module(&mut self) -> Result<Node<Module>, ParseError> {
+    fn parse_module(&mut self) -> Result<Module, ParseError> {
         let body = self.parse_block_body()?;
         let end = self.expect(TokenKind::Eof)?.span;
 
-        Ok(self.node(
-            Module { body },
-            Span {
-                start: 0,
-                end: end.start,
-            },
-        ))
+        Ok(Module {
+            body: self.node(
+                Expression::Block(body),
+                Span {
+                    start: 0,
+                    end: end.start,
+                },
+            ),
+        })
     }
 
     fn parse_var_declaration(&mut self) -> Result<Node<Expression>, ParseError> {

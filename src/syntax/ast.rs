@@ -4,12 +4,12 @@ use crate::syntax::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
-    pub body: BlockExpression,
+    pub body: Node<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ast {
-    pub root: Node<Module>,
+    pub root: Module,
     pub nodes: u32,
 }
 
