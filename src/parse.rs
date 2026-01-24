@@ -25,7 +25,7 @@ pub struct BinaryExpression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallExpression {
     function: Box<Node<Expression>>,
-    args: Vec<Box<Node<Expression>>>,
+    args: Vec<Node<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -375,7 +375,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let mut args = Vec::new();
 
         if self.peek()?.kind != TokenKind::RParen {
-            args.push(Box::new(self.parse_expression()?));
+            args.push(self.parse_expression()?);
         }
 
         while self.peek()?.kind == TokenKind::Comma {
@@ -386,7 +386,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                 break;
             }
 
-            args.push(Box::new(self.parse_expression()?));
+            args.push(self.parse_expression()?);
         }
 
         let end = self.expect(TokenKind::RParen)?.span;
