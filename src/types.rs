@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use crate::syntax::parse::{BinaryOperator, Expression, Identifier, Primary, UnaryOperator};
+use crate::syntax::ast::{BinaryOperator, Expression, Identifier, Primary, UnaryOperator};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypErrorKind {}

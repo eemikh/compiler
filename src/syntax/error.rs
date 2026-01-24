@@ -1,4 +1,4 @@
-use crate::{Span, syntax::token::TokenKind};
+use crate::syntax::{Span, token::TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseErrorKind {

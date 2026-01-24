@@ -1,7 +1,4 @@
-use crate::{
-    Source, Span,
-    syntax::{ParseError, ParseErrorKind},
-};
+use crate::syntax::{ParseError, ParseErrorKind, Source, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind<'a> {
@@ -343,8 +340,6 @@ pub fn tokenize<'a>(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::Source;
-
     use super::*;
 
     /// A wrapper used for testing to not have to provide a full [`Source`] or dealing with iterators or errors
