@@ -12,6 +12,7 @@ pub enum Expression {
     Unary(UnaryExpression),
     Primary(Primary),
     If(IfExpression),
+    Call(CallExpression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +20,12 @@ pub struct BinaryExpression {
     operator: BinaryOperator,
     lhs: Box<Node<Expression>>,
     rhs: Box<Node<Expression>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallExpression {
+    function: Box<Node<Expression>>,
+    args: Vec<Box<Node<Expression>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,6 +155,18 @@ impl Display for UnaryExpression {
     }
 }
 
+impl Display for CallExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(call {}", self.function)?;
+
+        for arg in &self.args {
+            write!(f, " {}", arg)?;
+        }
+
+        write!(f, ")")
+    }
+}
+
 impl Display for UnaryOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -168,6 +187,7 @@ impl Display for Expression {
             Expression::Primary(primary) => write!(f, "{}", primary),
             Expression::Unary(unary_expression) => write!(f, "{}", unary_expression),
             Expression::If(if_expression) => write!(f, "{}", if_expression),
+            Expression::Call(call_expression) => write!(f, "{}", call_expression),
         }
     }
 }
@@ -268,7 +288,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let op = match token.kind {
             TokenKind::Minus => UnaryOperator::Negate,
             TokenKind::Identifier("not") => UnaryOperator::Not,
-            _ => return self.parse_secondary_expression(),
+            _ => return self.parse_ternary_expression(),
         };
 
         self.next().expect("already peeked");
@@ -285,15 +305,8 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         })
     }
 
-    fn parse_secondary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+    fn parse_ternary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
         match self.peek()?.kind {
-            TokenKind::LParen => {
-                self.next().expect("already peeked");
-                let expr = self.parse_expression()?;
-                self.expect(TokenKind::RParen)?;
-
-                Ok(expr)
-            }
             TokenKind::Identifier("if") => {
                 let token = self.next().expect("already peeked");
                 let cond = self.parse_expression()?;
@@ -318,6 +331,19 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                     span,
                 })
             }
+            _ => self.parse_secondary_expression(),
+        }
+    }
+
+    fn parse_secondary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
+        let mut expr = match self.peek()?.kind {
+            TokenKind::LParen => {
+                self.next().expect("already peeked");
+                let expr = self.parse_expression()?;
+                self.expect(TokenKind::RParen)?;
+
+                Ok(expr)
+            }
             _ => match self.parse_primary() {
                 Some(primary) => Ok(Node {
                     item: Expression::Primary(primary.item),
@@ -334,7 +360,45 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                     span: self.peek()?.span,
                 }),
             },
+        }?;
+
+        while self.peek().map(|token| token.kind) == Ok(TokenKind::LParen) {
+            expr = self.parse_call(expr)?;
         }
+
+        Ok(expr)
+    }
+
+    fn parse_call(&mut self, function: Node<Expression>) -> Result<Node<Expression>, ParseError> {
+        self.expect(TokenKind::LParen)?;
+
+        let mut args = Vec::new();
+
+        if self.peek()?.kind != TokenKind::RParen {
+            args.push(Box::new(self.parse_expression()?));
+        }
+
+        while self.peek()?.kind == TokenKind::Comma {
+            self.next().expect("peeked already");
+
+            // allow trailing comma
+            if self.peek()?.kind == TokenKind::RParen {
+                break;
+            }
+
+            args.push(Box::new(self.parse_expression()?));
+        }
+
+        let end = self.expect(TokenKind::RParen)?.span;
+        let span = function.span.to(end);
+
+        Ok(Node {
+            item: Expression::Call(CallExpression {
+                function: Box::new(function),
+                args,
+            }),
+            span,
+        })
     }
 
     fn parse_primary(&mut self) -> Option<Node<Primary>> {
@@ -371,11 +435,11 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         }
     }
 
-    fn expect(&mut self, token_kind: TokenKind<'static>) -> Result<(), ParseError> {
+    fn expect(&mut self, token_kind: TokenKind<'static>) -> Result<Token<'code>, ParseError> {
         let tok = self.next()?;
 
         if tok.kind == token_kind {
-            Ok(())
+            Ok(tok)
         } else {
             Err(ParseError {
                 kind: ParseErrorKind::ExpectedToken(token_kind),
@@ -731,6 +795,62 @@ mod tests {
             .unwrap()
             .to_string(),
             "(if (if a b) (if c d e) f)"
+        );
+    }
+
+    #[test]
+    fn test_call() {
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(call test)"
+        );
+
+        // test(1+2,test1(),)
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(2), 1),
+                T(TokenKind::Comma, 1),
+                T(TokenKind::Identifier("test1"), 5),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::RParen, 1),
+                T(TokenKind::Comma, 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(call test (+ 1 2) (call test1))"
+        );
+
+        // (test+1)()(a)
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Identifier("test"), 4),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RParen, 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::RParen, 1),
+                T(TokenKind::LParen, 1),
+                T(TokenKind::Identifier("a"), 1),
+                T(TokenKind::RParen, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(call (call (+ test 1)) a)"
         );
     }
 }
