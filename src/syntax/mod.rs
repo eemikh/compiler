@@ -5,6 +5,11 @@ pub mod token;
 
 pub use error::{ParseError, ParseErrorKind};
 
+use crate::syntax::{
+    ast::{Module, Node},
+    token::tokenize,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -58,6 +63,13 @@ impl<'code> Source<'code> {
     }
 }
 
+pub fn parse(code: &str) -> (Result<Node<Module>, ParseError>, Source<'_>) {
+    let mut source = Source::new(code);
+    let tokens = tokenize(&mut source);
+
+    (parse::parse(tokens), source)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +107,12 @@ mod tests {
             source.index_to_location(20),
             SourceLocation { line: 6, col: 11 }
         );
+    }
+
+    #[test]
+    fn test_parse() {
+        let (ast, source) = parse("var a = 0;\n");
+        assert_eq!(ast.unwrap().to_string(), "(block (var a 0) ())");
+        assert_eq!(source.newlines, &[0, 11]);
     }
 }
