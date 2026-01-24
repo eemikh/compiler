@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use crate::syntax::ast::{BinaryOperator, Expression, Identifier, Primary, UnaryOperator};
+use crate::syntax::ast::{BinaryOperator, Expression, Identifier, Node, Primary, UnaryOperator};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypErrorKind {}
@@ -80,9 +80,9 @@ impl Environment {
 
 fn typecheck_expression(
     env: &mut Environment,
-    expression: &Expression,
+    expression: &Node<Expression>,
 ) -> Result<Typ, TypErrorKind> {
-    match expression {
+    match &expression.item {
         Expression::Binary(binary_expression) => match binary_expression.operator {
             BinaryOperator::Or
             | BinaryOperator::And
@@ -93,8 +93,8 @@ fn typecheck_expression(
             | BinaryOperator::GreaterThan
             | BinaryOperator::GreaterEqual => {
                 assert_eq!(
-                    typecheck_expression(env, &binary_expression.lhs.item)?,
-                    typecheck_expression(env, &binary_expression.rhs.item)?
+                    typecheck_expression(env, &binary_expression.lhs)?,
+                    typecheck_expression(env, &binary_expression.rhs)?
                 );
 
                 Ok(Typ::Unit)
@@ -105,18 +105,15 @@ fn typecheck_expression(
             | BinaryOperator::Divide
             | BinaryOperator::Modulo => {
                 assert_eq!(
-                    typecheck_expression(env, &binary_expression.lhs.item)?,
-                    typecheck_expression(env, &binary_expression.rhs.item)?
+                    typecheck_expression(env, &binary_expression.lhs)?,
+                    typecheck_expression(env, &binary_expression.rhs)?
                 );
 
                 Ok(Typ::Int)
             }
             BinaryOperator::Equals => {
-                let tgt_typ = typecheck_expression(env, &binary_expression.lhs.item)?;
-                assert_eq!(
-                    tgt_typ,
-                    typecheck_expression(env, &binary_expression.rhs.item)?
-                );
+                let tgt_typ = typecheck_expression(env, &binary_expression.lhs)?;
+                assert_eq!(tgt_typ, typecheck_expression(env, &binary_expression.rhs)?);
 
                 Ok(tgt_typ)
             }
@@ -124,7 +121,7 @@ fn typecheck_expression(
         Expression::Unary(unary_expression) => match unary_expression.operator {
             UnaryOperator::Not => {
                 assert_eq!(
-                    typecheck_expression(env, &unary_expression.operand.item)?,
+                    typecheck_expression(env, &unary_expression.operand)?,
                     Typ::Bool
                 );
 
@@ -132,7 +129,7 @@ fn typecheck_expression(
             }
             UnaryOperator::Negate => {
                 assert_eq!(
-                    typecheck_expression(env, &unary_expression.operand.item)?,
+                    typecheck_expression(env, &unary_expression.operand)?,
                     Typ::Int
                 );
 
@@ -147,20 +144,20 @@ fn typecheck_expression(
         },
         Expression::If(if_expression) => {
             assert_eq!(
-                typecheck_expression(env, &if_expression.condition.item)?,
+                typecheck_expression(env, &if_expression.condition)?,
                 Typ::Bool
             );
 
             match &if_expression.els {
                 Some(els_expression) => {
-                    let then_typ = typecheck_expression(env, &if_expression.then.item)?;
-                    let els_typ = typecheck_expression(env, &els_expression.item)?;
+                    let then_typ = typecheck_expression(env, &if_expression.then)?;
+                    let els_typ = typecheck_expression(env, els_expression)?;
                     assert_eq!(then_typ, els_typ);
 
                     Ok(then_typ)
                 }
                 None => {
-                    typecheck_expression(env, &if_expression.then.item)?;
+                    typecheck_expression(env, &if_expression.then)?;
 
                     Ok(Typ::Unit)
                 }
@@ -168,21 +165,21 @@ fn typecheck_expression(
         }
         Expression::While(while_expression) => {
             assert_eq!(
-                typecheck_expression(env, &while_expression.condition.item)?,
+                typecheck_expression(env, &while_expression.condition)?,
                 Typ::Bool
             );
 
-            typecheck_expression(env, &while_expression.body.item)
+            typecheck_expression(env, &while_expression.body)
         }
         Expression::Call(call_expression) => {
-            let f_typ = typecheck_expression(env, &call_expression.function.item)?;
+            let f_typ = typecheck_expression(env, &call_expression.function)?;
 
             match f_typ {
                 Typ::Function { params, ret } => {
                     assert_eq!(params.len(), call_expression.args.len());
 
                     for (expected, expr) in params.iter().zip(&call_expression.args) {
-                        assert_eq!(*expected, typecheck_expression(env, &expr.item)?);
+                        assert_eq!(*expected, typecheck_expression(env, expr)?);
                     }
 
                     Ok(*ret)
@@ -192,16 +189,16 @@ fn typecheck_expression(
         }
         Expression::Block(block_expression) => env.with_new_scope(|env| {
             for expr in &block_expression.expressions {
-                typecheck_expression(env, &expr.item)?;
+                typecheck_expression(env, expr)?;
             }
 
             match &block_expression.result_expression {
-                Some(expr) => typecheck_expression(env, &expr.item),
+                Some(expr) => typecheck_expression(env, expr),
                 None => Ok(Typ::Unit),
             }
         }),
         Expression::Var(var_expression) => {
-            let typ = typecheck_expression(env, &var_expression.value.item)?;
+            let typ = typecheck_expression(env, &var_expression.value)?;
 
             if let Some(expected_typ) = var_expression.typ.as_ref() {
                 let expected_typ = Typ::from_str(&expected_typ.0).unwrap();

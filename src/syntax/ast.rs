@@ -8,6 +8,12 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ast {
+    pub root: Node<Module>,
+    pub nodes: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Binary(BinaryExpression),
     Unary(UnaryExpression),
@@ -100,9 +106,13 @@ pub struct Identifier(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node<T> {
+    pub id: NodeId,
     pub item: T,
     pub span: Span,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId(pub u32);
 
 impl<T: Display> Display for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

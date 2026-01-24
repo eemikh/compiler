@@ -6,7 +6,7 @@ pub mod token;
 pub use error::{ParseError, ParseErrorKind};
 
 use crate::syntax::{
-    ast::{Module, Node},
+    ast::{Ast, Module, Node},
     token::tokenize,
 };
 
@@ -63,7 +63,7 @@ impl<'code> Source<'code> {
     }
 }
 
-pub fn parse(code: &str) -> (Result<Node<Module>, ParseError>, Source<'_>) {
+pub fn parse(code: &str) -> (Result<Ast, ParseError>, Source<'_>) {
     let mut source = Source::new(code);
     let tokens = tokenize(&mut source);
 
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let (ast, source) = parse("var a = 0;\n");
-        assert_eq!(ast.unwrap().to_string(), "(block (var a 0) ())");
+        assert_eq!(ast.unwrap().root.to_string(), "(block (var a 0) ())");
         assert_eq!(source.newlines, &[0, 11]);
     }
 }

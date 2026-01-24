@@ -3,9 +3,9 @@ use std::iter::Peekable;
 use crate::syntax::{
     ParseError, ParseErrorKind, Span,
     ast::{
-        BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression, Identifier,
-        IfExpression, Module, Node, Primary, UnaryExpression, UnaryOperator, VarExpression,
-        WhileExpression,
+        Ast, BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression,
+        Identifier, IfExpression, Module, Node, NodeId, Primary, UnaryExpression, UnaryOperator,
+        VarExpression, WhileExpression,
     },
     token::{Token, TokenKind},
 };
@@ -48,11 +48,19 @@ impl TryFrom<TokenKind<'_>> for BinaryOperator {
 }
 
 struct Parser<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> {
+    nodes: u32,
     tokens: Peekable<It>,
     can_skip_semicolon: bool,
 }
 
 impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code, It> {
+    fn node<T>(&mut self, item: T, span: Span) -> Node<T> {
+        let id = NodeId(self.nodes);
+        self.nodes += 1;
+
+        Node { id, item, span }
+    }
+
     fn parse_expression(&mut self) -> Result<Node<Expression>, ParseError> {
         let lhs = self.parse_expression_left(0)?;
 
@@ -62,14 +70,14 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             let rhs = self.parse_expression()?;
             let span = lhs.span.to(rhs.span);
 
-            return Ok(Node {
-                item: Expression::Binary(BinaryExpression {
+            return Ok(self.node(
+                Expression::Binary(BinaryExpression {
                     operator: BinaryOperator::Equals,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 }),
                 span,
-            });
+            ));
         }
 
         Ok(lhs)
@@ -96,14 +104,14 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                 let rhs = self.parse_expression_left(level + 1)?;
                 let span = lhs.span.to(rhs.span);
 
-                lhs = Node {
-                    item: Expression::Binary(BinaryExpression {
+                lhs = self.node(
+                    Expression::Binary(BinaryExpression {
                         operator: op,
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
                     }),
                     span,
-                };
+                );
             } else {
                 break;
             }
@@ -127,13 +135,13 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let rhs = self.parse_unary_expression()?;
         let rhs_span = rhs.span;
 
-        Ok(Node {
-            item: Expression::Unary(UnaryExpression {
+        Ok(self.node(
+            Expression::Unary(UnaryExpression {
                 operator: op,
                 operand: Box::new(rhs),
             }),
-            span: token_span.to(rhs_span),
-        })
+            token_span.to(rhs_span),
+        ))
     }
 
     fn parse_ternary_expression(&mut self) -> Result<Node<Expression>, ParseError> {
@@ -153,14 +161,14 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
 
                 let span = token.span.to(els.as_ref().unwrap_or(&then).span);
 
-                Ok(Node {
-                    item: Expression::If(IfExpression {
+                Ok(self.node(
+                    Expression::If(IfExpression {
                         condition: Box::new(cond),
                         then: Box::new(then),
                         els: els.map(Box::new),
                     }),
                     span,
-                })
+                ))
             }
             TokenKind::Identifier("while") => {
                 let token = self.next().expect("already peeked");
@@ -169,13 +177,13 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
                 let body = self.parse_expression()?;
                 let span = token.span.to(body.span);
 
-                Ok(Node {
-                    item: Expression::While(WhileExpression {
+                Ok(self.node(
+                    Expression::While(WhileExpression {
                         condition: Box::new(cond),
                         body: Box::new(body),
                     }),
                     span,
-                })
+                ))
             }
             _ => self.parse_secondary_expression(),
         }
@@ -192,10 +200,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
             }
             TokenKind::LBrace => self.parse_block_expression(),
             _ => match self.parse_primary() {
-                Some(primary) => Ok(Node {
-                    item: Expression::Primary(primary.item),
-                    span: primary.span,
-                }),
+                Some(primary) => Ok(self.node(Expression::Primary(primary.item), primary.span)),
                 None => Err(ParseError {
                     kind: ParseErrorKind::ExpectedTokens(&[
                         "boolean",
@@ -221,10 +226,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let body = self.parse_block_body()?;
         let end = self.expect(TokenKind::RBrace)?.span;
 
-        Ok(Node {
-            item: Expression::Block(body),
-            span: start.to(end),
-        })
+        Ok(self.node(Expression::Block(body), start.to(end)))
     }
 
     fn parse_block_body(&mut self) -> Result<BlockExpression, ParseError> {
@@ -267,13 +269,13 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let body = self.parse_block_body()?;
         let end = self.expect(TokenKind::Eof)?.span;
 
-        Ok(Node {
-            item: Module { body },
-            span: Span {
+        Ok(self.node(
+            Module { body },
+            Span {
                 start: 0,
                 end: end.start,
             },
-        })
+        ))
     }
 
     fn parse_var_declaration(&mut self) -> Result<Node<Expression>, ParseError> {
@@ -306,14 +308,14 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let value = self.parse_expression()?;
         let span = start.to(value.span);
 
-        Ok(Node {
-            item: Expression::Var(VarExpression {
+        Ok(self.node(
+            Expression::Var(VarExpression {
                 name,
                 typ,
                 value: Box::new(value),
             }),
             span,
-        })
+        ))
     }
 
     fn parse_call(&mut self, function: Node<Expression>) -> Result<Node<Expression>, ParseError> {
@@ -339,13 +341,13 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let end = self.expect(TokenKind::RParen)?.span;
         let span = function.span.to(end);
 
-        Ok(Node {
-            item: Expression::Call(CallExpression {
+        Ok(self.node(
+            Expression::Call(CallExpression {
                 function: Box::new(function),
                 args,
             }),
             span,
-        })
+        ))
     }
 
     fn parse_primary(&mut self) -> Option<Node<Primary>> {
@@ -363,7 +365,7 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let span = token.span;
         self.next().expect("already peeked");
 
-        Some(Node { item, span })
+        Some(self.node(item, span))
     }
 
     fn peek(&mut self) -> Result<&Token<'code>, ParseError> {
@@ -428,13 +430,17 @@ fn expect_some(token: &Token<'_>) -> Result<(), ParseError> {
 
 pub fn parse<'code>(
     tokens: impl Iterator<Item = Result<Token<'code>, ParseError>>,
-) -> Result<Node<Module>, ParseError> {
+) -> Result<Ast, ParseError> {
     let mut parser = Parser {
+        nodes: 0,
         tokens: tokens.peekable(),
         can_skip_semicolon: false,
     };
 
-    parser.parse_module()
+    Ok(Ast {
+        root: parser.parse_module()?,
+        nodes: parser.nodes,
+    })
 }
 
 #[cfg(test)]
@@ -452,6 +458,7 @@ mod tests {
         tokens: &[Result<Token<'a>, ParseError>],
     ) -> Parser<'a, impl Iterator<Item = Result<Token<'a>, ParseError>>> {
         Parser {
+            nodes: 0,
             tokens: tokens.iter().cloned().peekable(),
             can_skip_semicolon: false,
         }
@@ -462,6 +469,7 @@ mod tests {
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("true"), 4)])).parse_primary(),
             Some(Node {
+                id: NodeId(0),
                 item: Primary::Bool(true),
                 span: Span { start: 0, end: 4 },
             })
@@ -470,6 +478,7 @@ mod tests {
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("false"), 5)])).parse_primary(),
             Some(Node {
+                id: NodeId(0),
                 item: Primary::Bool(false),
                 span: Span { start: 0, end: 5 },
             })
@@ -478,6 +487,7 @@ mod tests {
         assert_matches!(
             quick_parser(&token_vec(&[T(TokenKind::Integer(1234), 4)])).parse_primary(),
             Some(Node {
+                id: NodeId(0),
                 item: Primary::Integer(1234),
                 span: Span { start: 0, end: 4 },
             })
@@ -486,6 +496,7 @@ mod tests {
         assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("hello"), 5)])).parse_primary(),
             Some(Node {
+                id: NodeId(0),
                 item: Primary::Identifier(Identifier(String::from("hello"))),
                 span: Span { start: 0, end: 5 },
             })
@@ -1107,6 +1118,7 @@ mod tests {
                 .into_iter()
             )
             .unwrap()
+            .root
             .to_string(),
             "(block (var a 1) (= a (+ a 2)) ())"
         );
