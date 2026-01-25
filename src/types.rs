@@ -94,7 +94,10 @@ impl Environment {
         Self {
             variables: vec![HashMap::from([(
                 Identifier(String::from("print_int")),
-                VarTyp::Known(Typ::Int),
+                VarTyp::Known(Typ::Function {
+                    params: vec![Typ::Int],
+                    ret: Box::new(Typ::Unit),
+                }),
             )])],
             typmap: TypMap {
                 typs: HashMap::new(),
@@ -142,11 +145,15 @@ impl Environment {
     }
 }
 
-pub fn typecheck(ast: &Ast) -> Result<TypMap, AnyTypError> {
+pub fn typecheck(ast: &Ast) -> Result<TypMap, Vec<TypError>> {
     let mut env = Environment::new();
-    typecheck_module(&mut env, &ast.root)?;
+    let _ = typecheck_module(&mut env, &ast.root);
 
-    Ok(env.typmap)
+    if env.errors.is_empty() {
+        Ok(env.typmap)
+    } else {
+        Err(env.errors)
+    }
 }
 
 fn typecheck_module(env: &mut Environment, module: &Module) -> Result<Typ, AnyTypError> {
@@ -422,12 +429,12 @@ mod tests {
 
     use super::*;
 
-    fn str_to_typemap(code: &str) -> Result<TypMap, AnyTypError> {
+    fn str_to_typemap(code: &str) -> Result<TypMap, Vec<TypError>> {
         let ast = parse(code).0.unwrap();
         typecheck(&ast)
     }
 
-    fn module_to_typ(code: &str) -> Result<Typ, AnyTypError> {
+    fn module_to_typ(code: &str) -> Result<Typ, Vec<TypError>> {
         let ast = parse(code).0.unwrap();
         Ok(typecheck(&ast)?
             .typs
@@ -452,5 +459,50 @@ mod tests {
         assert_eq!(module_to_typ("not not true").unwrap(), Typ::Bool);
         assert_eq!(module_to_typ("if true then 1").unwrap(), Typ::Unit);
         assert_eq!(module_to_typ("if true then 1 else 2").unwrap(), Typ::Int);
+    }
+
+    #[test]
+    fn test_errors() {
+        assert_eq!(
+            module_to_typ("var a: Int = print_int(1)").unwrap_err()[0].kind,
+            TypErrorKind::ExpectedTyp {
+                expected: Typ::Int,
+                got: Typ::Unit
+            }
+        );
+
+        assert_eq!(
+            module_to_typ("var a = 1; var b = true; a or b").unwrap_err()[0].kind,
+            TypErrorKind::BinaryMismatch {
+                op: BinaryOperator::Or,
+                lhs: Typ::Int,
+                rhs: Typ::Bool
+            }
+        );
+
+        assert_eq!(
+            module_to_typ("1 + true").unwrap_err()[0].kind,
+            TypErrorKind::BinaryMismatch {
+                op: BinaryOperator::Add,
+                lhs: Typ::Int,
+                rhs: Typ::Bool
+            }
+        );
+
+        assert_eq!(
+            module_to_typ("print_int()").unwrap_err()[0].kind,
+            TypErrorKind::InvalidParameterCount {
+                expected: 1,
+                got: 0
+            }
+        );
+
+        assert_eq!(
+            module_to_typ("print_int(true)").unwrap_err()[0].kind,
+            TypErrorKind::ExpectedTyp {
+                expected: Typ::Int,
+                got: Typ::Bool
+            }
+        );
     }
 }
