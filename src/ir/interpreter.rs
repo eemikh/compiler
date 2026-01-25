@@ -4,7 +4,7 @@ use crate::ir::{BoolOperation, FunctionId, Instruction, IntOperation, LabelId, M
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Value {
-    Int(u64),
+    Int(i64),
     Bool(bool),
 }
 
@@ -181,7 +181,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
             InstructionFlow::Continue
         }
         Instruction::LoadInt { target, value } => {
-            ctx.set_value(*target, Value::Int(*value));
+            ctx.set_value(*target, Value::Int(*value as i64));
 
             InstructionFlow::Continue
         }
