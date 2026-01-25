@@ -5,10 +5,7 @@ pub mod token;
 
 pub use error::{ParseError, ParseErrorKind};
 
-use crate::syntax::{
-    ast::{Ast, Module, Node},
-    token::tokenize,
-};
+use crate::syntax::{ast::Ast, token::tokenize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
