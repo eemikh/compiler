@@ -298,13 +298,20 @@ impl<'code, It: Iterator<Item = Result<Token<'code>, ParseError>>> Parser<'code,
         let typ = match self.peek()?.kind {
             TokenKind::Colon => {
                 self.next().expect("already peeked");
-                Some(Identifier(
-                    self.expect_identifier()?
-                        .kind
-                        .identifier()
-                        .expect("expected identifier already")
-                        .to_string(),
-                ))
+                let token = self.expect_identifier()?;
+
+                Some(
+                    self.node(
+                        Identifier(
+                            token
+                                .kind
+                                .identifier()
+                                .expect("expected identifier already")
+                                .to_string(),
+                        ),
+                        token.span,
+                    ),
+                )
             }
             _ => None,
         };

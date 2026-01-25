@@ -35,7 +35,7 @@ pub struct BinaryExpression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarExpression {
     pub name: Identifier,
-    pub typ: Option<Identifier>,
+    pub typ: Option<Node<Identifier>>,
     pub value: Box<Node<Expression>>,
 }
 
