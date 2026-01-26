@@ -369,4 +369,74 @@ mod tests {
             Some(Value::Bool(false))
         );
     }
+
+    #[test]
+    fn test_jump() {
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1
+                }),
+                I(Instruction::Jump(LabelId(1))),
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 2
+                }),
+                L, // 0
+                L, // 1
+                L, // 2
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Int(1))
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1
+                }),
+                I(Instruction::LoadBool {
+                    target: Variable(1),
+                    value: true
+                }),
+                I(Instruction::CondJump {
+                    cond_var: Variable(1),
+                    target: LabelId(0),
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 2
+                }),
+                L, // 0
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Int(1))
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1
+                }),
+                I(Instruction::LoadBool {
+                    target: Variable(1),
+                    value: false
+                }),
+                I(Instruction::CondJump {
+                    cond_var: Variable(1),
+                    target: LabelId(0),
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 2
+                }),
+                L, // 0
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Int(2))
+        );
+    }
 }
