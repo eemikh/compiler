@@ -241,7 +241,14 @@ mod tests {
     }
 
     #[test]
-    fn load() {
+    fn test_return() {
+        assert_eq!(test_wrapper(&[I(Instruction::Return(None)),]), None);
+
+        assert_eq!(test_wrapper(&[]), None);
+    }
+
+    #[test]
+    fn test_load() {
         assert_eq!(
             test_wrapper(&[
                 I(Instruction::LoadInt {
@@ -266,6 +273,100 @@ mod tests {
                 I(Instruction::Return(Some(Variable(2)))),
             ]),
             Some(Value::Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_int_op() {
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1234
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(1),
+                    value: 8765
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::Add,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(1)
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::Multiply,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(1)
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(2),
+                    value: 32
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::Subtract,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(2)
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::Divide,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(2)
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::Modulo,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(2)
+                }),
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Int(3))
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1234
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(1),
+                    value: 1235
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::LessThan,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(1)
+                }),
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Bool(true))
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1235
+                }),
+                I(Instruction::LoadInt {
+                    target: Variable(1),
+                    value: 1235
+                }),
+                I(Instruction::IntOp {
+                    operation: IntOperation::LessThan,
+                    target: Variable(0),
+                    lhs: Variable(0),
+                    rhs: Variable(1)
+                }),
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Bool(false))
         );
     }
 }
