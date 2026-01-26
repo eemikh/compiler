@@ -193,3 +193,79 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
         Instruction::Return(variable) => InstructionFlow::Return(*variable),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::ir::builder::{FunctionBuilder, ModuleBuilder};
+
+    use super::*;
+
+    enum InstructionOrLabel {
+        L,
+        I(Instruction),
+    }
+
+    use InstructionOrLabel::*;
+
+    fn build_module(instructions: &[InstructionOrLabel]) -> Module {
+        let mut builder = ModuleBuilder::new();
+        let mut f = FunctionBuilder::new();
+
+        for i in instructions {
+            match i {
+                InstructionOrLabel::L => {
+                    let label = f.label();
+                    f.emit_label(label);
+                }
+                InstructionOrLabel::I(instruction) => f.emit_instruction(instruction.clone()),
+            }
+        }
+
+        let fid = builder.function();
+        builder.add_function(fid, f.build());
+        builder.set_entry(fid);
+
+        builder.build()
+    }
+
+    fn test_wrapper(instructions: &[InstructionOrLabel]) -> Option<Value> {
+        let module = build_module(instructions);
+        let mut ctx = Context {
+            variables: Vec::new(),
+            module: &module,
+        };
+
+        ctx.new_scope();
+
+        call_function(&mut ctx, module.entry)
+    }
+
+    #[test]
+    fn load() {
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(0),
+                    value: 1234
+                }),
+                I(Instruction::Return(Some(Variable(0)))),
+            ]),
+            Some(Value::Int(1234))
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                I(Instruction::LoadInt {
+                    target: Variable(2),
+                    value: 9
+                }),
+                I(Instruction::LoadBool {
+                    target: Variable(2),
+                    value: true
+                }),
+                I(Instruction::Return(Some(Variable(2)))),
+            ]),
+            Some(Value::Bool(true))
+        );
+    }
+}
