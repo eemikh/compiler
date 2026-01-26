@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+mod builder;
 mod interpreter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,14 +75,14 @@ pub enum Instruction {
     Return(Option<Variable>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub instructions: Vec<Instruction>,
     /// Maps a label ID to index in instructions
     pub labels: HashMap<LabelId, usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub functions: Vec<Function>,
     pub entry: FunctionId,
