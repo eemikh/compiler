@@ -5,8 +5,8 @@ use crate::{
     },
     scope::Scope,
     syntax::ast::{
-        Ast, BinaryExpression, BinaryOperator, BlockExpression, Expression, Identifier, Node,
-        Primary, UnaryExpression, UnaryOperator, VarExpression,
+        Ast, BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression,
+        Identifier, Node, Primary, UnaryExpression, UnaryOperator, VarExpression,
     },
     types::{Typ, TypMap},
 };
@@ -28,13 +28,29 @@ impl FunctionCodegen<'_> {
             Expression::Primary(primary) => Some(self.gen_primary(primary)),
             Expression::If(if_expression) => todo!(),
             Expression::While(while_expression) => todo!(),
-            Expression::Call(call_expression) => todo!(),
+            Expression::Call(call_expression) => self.gen_call_expression(call_expression),
             Expression::Block(block_expression) => self.gen_block(block_expression),
             Expression::Var(var_expression) => {
                 self.gen_var_expression(var_expression);
                 None
             }
         }
+    }
+
+    fn gen_call_expression(&mut self, expression: &CallExpression) -> Option<Variable> {
+        let params = expression
+            .args
+            .iter()
+            .map(|expr| self.gen_expression(expr).expect("type checked"))
+            .collect();
+
+        self.builder.emit_instruction(Instruction::Call {
+            function: todo!(),
+            parameters: params,
+            return_value: todo!(),
+        });
+
+        todo!()
     }
 
     fn gen_var_expression(&mut self, expression: &VarExpression) {
