@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ir::{BoolOperation, FunctionId, Instruction, IntOperation, LabelId, Module, Variable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Value {
+pub enum Value {
     Int(i64),
     Bool(bool),
 }
@@ -52,7 +52,7 @@ impl Context<'_> {
     }
 }
 
-pub fn interpret(module: &Module) {
+pub fn interpret(module: &Module) -> Option<Value> {
     let mut ctx = Context {
         variables: Vec::new(),
         module,
@@ -60,7 +60,7 @@ pub fn interpret(module: &Module) {
 
     ctx.new_scope();
 
-    call_function(&mut ctx, module.entry);
+    call_function(&mut ctx, module.entry)
 }
 
 fn call_function(ctx: &mut Context, function: FunctionId) -> Option<Value> {

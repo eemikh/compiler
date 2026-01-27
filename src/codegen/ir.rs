@@ -4,7 +4,10 @@ use crate::{
         Variable,
     },
     scope::Scope,
-    syntax::ast::{Ast, BinaryExpression, BinaryOperator, Expression, Identifier, Node, Primary},
+    syntax::ast::{
+        Ast, BinaryExpression, BinaryOperator, BlockExpression, Expression, Identifier, Node,
+        Primary,
+    },
     types::{Typ, TypMap},
 };
 
@@ -24,9 +27,26 @@ impl FunctionCodegen<'_> {
             Expression::If(if_expression) => todo!(),
             Expression::While(while_expression) => todo!(),
             Expression::Call(call_expression) => todo!(),
-            Expression::Block(block_expression) => todo!(),
+            Expression::Block(block_expression) => self.gen_block(block_expression),
             Expression::Var(var_expression) => todo!(),
         }
+    }
+
+    fn gen_block(&mut self, block: &BlockExpression) -> Option<Variable> {
+        self.scope.new_scope();
+
+        for expr in &block.expressions {
+            self.gen_expression(expr);
+        }
+
+        let res = match &block.result_expression {
+            Some(res_expr) => self.gen_expression(res_expr),
+            None => None,
+        };
+
+        self.scope.remove_scope();
+
+        res
     }
 
     fn gen_primary(&mut self, primary: &Primary) -> Variable {
@@ -59,7 +79,7 @@ impl FunctionCodegen<'_> {
 
     fn gen_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
         match self.typmap.typs[&expression.lhs.id] {
-            Typ::Int => todo!(),
+            Typ::Int => Some(self.gen_int_binary_expression(expression)),
             Typ::Bool => self.gen_bool_binary_expression(expression),
             _ => unreachable!("type checker won't allow"),
         }
@@ -179,4 +199,23 @@ pub fn gen_ir(ast: &Ast, typmap: &TypMap) -> ir::Module {
     module.set_entry(fid);
 
     module.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        ir::interpreter::{Value, interpret},
+        syntax::parse,
+        types::typecheck,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_binary() {
+        let ast = parse("1 + 1").0.unwrap();
+        let typmap = typecheck(&ast).unwrap();
+        let ir = gen_ir(&ast, &typmap);
+        assert_eq!(interpret(&ir), Some(Value::Int(2)));
+    }
 }

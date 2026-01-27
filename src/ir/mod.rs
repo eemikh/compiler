@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 mod builder;
-mod interpreter;
+pub mod interpreter;
 
 pub use builder::{FunctionBuilder, ModuleBuilder};
 
