@@ -503,14 +503,14 @@ mod tests {
         assert_eq!(
             test(
                 "
-                var n = 83;
-                var divisor = n / 2;
-                var is_prime = true;
-                while divisor != 1 do {
-                    if n % divisor == 0 then is_prime = false;
-                    divisor = divisor - 1; # this is a comment
-                }
-                is_prime
+                    var n = 83;
+                    var divisor = n / 2;
+                    var is_prime = true;
+                    while divisor != 1 do {
+                        if n % divisor == 0 then is_prime = false;
+                        divisor = divisor - 1; # this is a comment
+                    }
+                    is_prime
                 "
             ),
             Some(Value::Bool(true))
