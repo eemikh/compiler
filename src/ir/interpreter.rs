@@ -120,9 +120,13 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
             InstructionFlow::Continue
         }
         Instruction::Jump(label_id) => InstructionFlow::Jump(*label_id),
-        Instruction::CondJump { cond_var, target } => match ctx.get_value(*cond_var) {
-            Some(Value::Bool(true)) => InstructionFlow::Jump(*target),
-            Some(Value::Bool(false)) => InstructionFlow::Continue,
+        Instruction::CondJump {
+            cond_var,
+            then,
+            els,
+        } => match ctx.get_value(*cond_var) {
+            Some(Value::Bool(true)) => InstructionFlow::Jump(*then),
+            Some(Value::Bool(false)) => InstructionFlow::Jump(*els),
             Some(_) => panic!("variable {:?} has wrong type", cond_var),
             None => panic!("variable {:?} has no value", cond_var),
         },
@@ -407,13 +411,15 @@ mod tests {
                 }),
                 I(Instruction::CondJump {
                     cond_var: Variable(1),
-                    target: LabelId(0),
+                    then: LabelId(1),
+                    els: LabelId(0),
                 }),
+                L, // 0
                 I(Instruction::LoadInt {
                     target: Variable(0),
                     value: 2
                 }),
-                L, // 0
+                L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
             Some(Value::Int(1))
@@ -431,13 +437,15 @@ mod tests {
                 }),
                 I(Instruction::CondJump {
                     cond_var: Variable(1),
-                    target: LabelId(0),
+                    then: LabelId(1),
+                    els: LabelId(0),
                 }),
+                L, // 0
                 I(Instruction::LoadInt {
                     target: Variable(0),
                     value: 2
                 }),
-                L, // 0
+                L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
             Some(Value::Int(2))

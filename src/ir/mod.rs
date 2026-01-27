@@ -56,7 +56,8 @@ pub enum Instruction {
     Jump(LabelId),
     CondJump {
         cond_var: Variable,
-        target: LabelId,
+        then: LabelId,
+        els: LabelId,
     },
     IntOp {
         operation: IntOperation,
