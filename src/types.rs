@@ -169,6 +169,8 @@ fn typecheck_expression(
             let lhs = typecheck_expression(env, &binary_expression.lhs);
             let rhs = typecheck_expression(env, &binary_expression.rhs);
 
+            // TODO: check that the binary can accept the type
+
             if let (Ok(lhs), Ok(rhs)) = (&lhs, &rhs)
                 && lhs != rhs
             {
