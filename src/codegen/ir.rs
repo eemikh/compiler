@@ -21,7 +21,9 @@ struct FunctionCodegen<'a> {
 impl FunctionCodegen<'_> {
     fn gen_expression(&mut self, expr: &Node<Expression>) -> Option<Variable> {
         match &expr.item {
-            Expression::Binary(binary_expression) => self.gen_binary_expression(binary_expression),
+            Expression::Binary(binary_expression) => {
+                Some(self.gen_binary_expression(binary_expression))
+            }
             Expression::Unary(unary_expression) => todo!(),
             Expression::Primary(primary) => Some(self.gen_primary(primary)),
             Expression::If(if_expression) => todo!(),
@@ -50,36 +52,37 @@ impl FunctionCodegen<'_> {
     }
 
     fn gen_primary(&mut self, primary: &Primary) -> Variable {
-        let target = self.variable();
-
         match primary {
-            Primary::Bool(value) => self.builder.emit_instruction(Instruction::LoadBool {
-                target,
-                value: *value,
-            }),
-            Primary::Integer(value) => self.builder.emit_instruction(Instruction::LoadInt {
-                target,
-                value: *value,
-            }),
-            Primary::Identifier(identifier) => {
-                let from = self
-                    .scope
-                    .lookup_variable(identifier)
-                    .expect("type checked");
+            Primary::Bool(value) => {
+                let target = self.variable();
 
-                self.builder.emit_instruction(Instruction::Copy {
-                    from: *from,
-                    to: target,
+                self.builder.emit_instruction(Instruction::LoadBool {
+                    target,
+                    value: *value,
                 });
-            }
-        }
 
-        target
+                target
+            }
+            Primary::Integer(value) => {
+                let target = self.variable();
+
+                self.builder.emit_instruction(Instruction::LoadInt {
+                    target,
+                    value: *value,
+                });
+
+                target
+            }
+            Primary::Identifier(identifier) => *self
+                .scope
+                .lookup_variable(identifier)
+                .expect("type checked"),
+        }
     }
 
-    fn gen_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
+    fn gen_binary_expression(&mut self, expression: &BinaryExpression) -> Variable {
         match self.typmap.typs[&expression.lhs.id] {
-            Typ::Int => Some(self.gen_int_binary_expression(expression)),
+            Typ::Int => self.gen_int_binary_expression(expression),
             Typ::Bool => self.gen_bool_binary_expression(expression),
             _ => unreachable!("type checker won't allow"),
         }
@@ -121,7 +124,7 @@ impl FunctionCodegen<'_> {
         tgt
     }
 
-    fn gen_bool_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
+    fn gen_bool_binary_expression(&mut self, expression: &BinaryExpression) -> Variable {
         let op = match expression.operator {
             BinaryOperator::Or => BoolOperation::Or,
             BinaryOperator::And => BoolOperation::And,
@@ -129,7 +132,7 @@ impl FunctionCodegen<'_> {
             BinaryOperator::NotEqual => BoolOperation::NotEqual,
             BinaryOperator::Equals => match &expression.lhs.item {
                 Expression::Primary(Primary::Identifier(identifier)) => {
-                    return Some(self.gen_assignment(identifier, &expression.rhs));
+                    return self.gen_assignment(identifier, &expression.rhs);
                 }
                 _ => unreachable!("type checked"),
             },
@@ -147,24 +150,17 @@ impl FunctionCodegen<'_> {
             rhs,
         });
 
-        Some(tgt)
+        tgt
     }
 
     fn gen_assignment(&mut self, tgt: &Identifier, rhs: &Node<Expression>) -> Variable {
         let from = self.gen_expression(rhs).expect("type checked");
-        let tmp_variable = self.variable();
         let tgt = self.scope.lookup_variable(tgt).expect("type checked");
 
         self.builder
             .emit_instruction(Instruction::Copy { from, to: *tgt });
-        // it is assumed that the variable returned may be modified. because of that, we need to
-        // return a copy, not a reference to the variable (in code) we modified
-        self.builder.emit_instruction(Instruction::Copy {
-            from,
-            to: tmp_variable,
-        });
 
-        tmp_variable
+        *tgt
     }
 
     fn gen_body(mut self, body: &Node<Expression>) -> Function {
