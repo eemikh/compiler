@@ -1,7 +1,10 @@
 use std::{collections::HashMap, str::FromStr};
 
-use crate::syntax::ast::{
-    Ast, BinaryOperator, Expression, Identifier, Module, Node, NodeId, Primary, UnaryOperator,
+use crate::{
+    scope::Scope,
+    syntax::ast::{
+        Ast, BinaryOperator, Expression, Identifier, Module, Node, NodeId, Primary, UnaryOperator,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,9 +85,7 @@ impl FromStr for Typ {
 }
 
 struct Environment {
-    /// A mapping of variables in all scopes by their identifiers to their types. The last element
-    /// in the vector is the innermost scope.
-    variables: Vec<HashMap<Identifier, VarTyp>>,
+    scope: Scope<VarTyp>,
     typmap: TypMap,
     errors: Vec<TypError>,
 }
@@ -92,13 +93,7 @@ struct Environment {
 impl Environment {
     fn new() -> Self {
         Self {
-            variables: vec![HashMap::from([(
-                Identifier(String::from("print_int")),
-                VarTyp::Known(Typ::Function {
-                    params: vec![Typ::Int],
-                    ret: Box::new(Typ::Unit),
-                }),
-            )])],
+            scope: Scope::new(),
             typmap: TypMap {
                 typs: HashMap::new(),
             },
@@ -106,38 +101,12 @@ impl Environment {
         }
     }
 
-    fn lookup_variable(&self, identifier: &Identifier) -> Option<&VarTyp> {
-        self.variables
-            .iter()
-            .rev()
-            .filter_map(|level| level.get(identifier))
-            .next()
-    }
-
-    fn set_variable_typ(&mut self, identifier: Identifier, typ: VarTyp) {
-        self.variables
-            .iter_mut()
-            .next_back()
-            .expect("there is always at least one scope")
-            .insert(identifier, typ);
-    }
-
     fn with_new_scope<T>(&mut self, f: impl FnOnce(&mut Environment) -> T) -> T {
-        self.new_scope();
+        self.scope.new_scope();
         let ret = f(self);
-        self.remove_scope();
+        self.scope.remove_scope();
 
         ret
-    }
-
-    fn new_scope(&mut self) {
-        self.variables.push(HashMap::new());
-    }
-
-    fn remove_scope(&mut self) {
-        assert!(!self.variables.is_empty());
-
-        self.variables.pop();
     }
 
     fn error(&mut self, error: TypError) {
@@ -147,6 +116,16 @@ impl Environment {
 
 pub fn typecheck(ast: &Ast) -> Result<TypMap, Vec<TypError>> {
     let mut env = Environment::new();
+
+    env.scope.new_scope();
+    env.scope.create_variable(
+        Identifier(String::from("print_int")),
+        VarTyp::Known(Typ::Function {
+            params: vec![Typ::Int],
+            ret: Box::new(Typ::Unit),
+        }),
+    );
+
     let _ = typecheck_module(&mut env, &ast.root);
 
     if env.errors.is_empty() {
@@ -245,7 +224,7 @@ fn typecheck_expression(
         Expression::Primary(primary) => match primary {
             Primary::Bool(_) => Typ::Bool,
             Primary::Integer(_) => Typ::Int,
-            Primary::Identifier(identifier) => match env.lookup_variable(identifier) {
+            Primary::Identifier(identifier) => match env.scope.lookup_variable(identifier) {
                 Some(typ) => match typ {
                     VarTyp::Unknown => return Err(AnyTypError {}),
                     VarTyp::Known(typ) => typ.clone(),
@@ -396,7 +375,7 @@ fn typecheck_expression(
                             });
                         }
 
-                        env.set_variable_typ(
+                        env.scope.create_variable(
                             var_expression.name.clone(),
                             VarTyp::Known(expected_typ),
                         );
@@ -406,13 +385,16 @@ fn typecheck_expression(
                             kind: TypErrorKind::InvalidTyp,
                         });
 
-                        env.set_variable_typ(var_expression.name.clone(), VarTyp::Unknown);
+                        env.scope
+                            .create_variable(var_expression.name.clone(), VarTyp::Unknown);
                     }
                 } else {
-                    env.set_variable_typ(var_expression.name.clone(), VarTyp::Known(typ));
+                    env.scope
+                        .create_variable(var_expression.name.clone(), VarTyp::Known(typ));
                 }
             } else {
-                env.set_variable_typ(var_expression.name.clone(), VarTyp::Unknown);
+                env.scope
+                    .create_variable(var_expression.name.clone(), VarTyp::Unknown);
             }
 
             Typ::Unit

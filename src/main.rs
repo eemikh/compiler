@@ -2,6 +2,7 @@
 use std::env::args;
 
 mod ir;
+mod scope;
 mod syntax;
 mod types;
 
