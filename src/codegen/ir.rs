@@ -20,13 +20,41 @@ impl FunctionCodegen<'_> {
         match &expr.item {
             Expression::Binary(binary_expression) => self.gen_binary_expression(binary_expression),
             Expression::Unary(unary_expression) => todo!(),
-            Expression::Primary(primary) => todo!(),
+            Expression::Primary(primary) => Some(self.gen_primary(primary)),
             Expression::If(if_expression) => todo!(),
             Expression::While(while_expression) => todo!(),
             Expression::Call(call_expression) => todo!(),
             Expression::Block(block_expression) => todo!(),
             Expression::Var(var_expression) => todo!(),
         }
+    }
+
+    fn gen_primary(&mut self, primary: &Primary) -> Variable {
+        let target = self.variable();
+
+        match primary {
+            Primary::Bool(value) => self.builder.emit_instruction(Instruction::LoadBool {
+                target,
+                value: *value,
+            }),
+            Primary::Integer(value) => self.builder.emit_instruction(Instruction::LoadInt {
+                target,
+                value: *value,
+            }),
+            Primary::Identifier(identifier) => {
+                let from = self
+                    .scope
+                    .lookup_variable(identifier)
+                    .expect("type checked");
+
+                self.builder.emit_instruction(Instruction::Copy {
+                    from: *from,
+                    to: target,
+                });
+            }
+        }
+
+        target
     }
 
     fn gen_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
@@ -37,7 +65,7 @@ impl FunctionCodegen<'_> {
         }
     }
 
-    fn gen_int_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
+    fn gen_int_binary_expression(&mut self, expression: &BinaryExpression) -> Variable {
         let op = match expression.operator {
             BinaryOperator::Add => IntOperation::Add,
             BinaryOperator::Subtract => IntOperation::Subtract,
@@ -52,7 +80,7 @@ impl FunctionCodegen<'_> {
             BinaryOperator::GreaterEqual => IntOperation::GreaterEqual,
             BinaryOperator::Equals => match &expression.lhs.item {
                 Expression::Primary(Primary::Identifier(identifier)) => {
-                    return Some(self.gen_assignment(identifier, &expression.rhs));
+                    return self.gen_assignment(identifier, &expression.rhs);
                 }
                 _ => unreachable!("type checked"),
             },
@@ -70,7 +98,7 @@ impl FunctionCodegen<'_> {
             rhs,
         });
 
-        Some(tgt)
+        tgt
     }
 
     fn gen_bool_binary_expression(&mut self, expression: &BinaryExpression) -> Option<Variable> {
