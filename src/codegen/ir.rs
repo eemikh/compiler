@@ -287,9 +287,47 @@ impl FunctionCodegen<'_> {
             _ => unreachable!("type checker won't allow"),
         };
 
-        let lhs = self.gen_expression(&expression.lhs).expect("type checked");
-        let rhs = self.gen_expression(&expression.rhs).expect("type checked");
         let tgt = self.variable();
+        let lhs = self.gen_expression(&expression.lhs).expect("type checked");
+        let end = self.builder.label();
+
+        match op {
+            BoolOperation::Or => {
+                let short_circuit = self.builder.label();
+                let eval_rhs = self.builder.label();
+                self.builder.emit_instruction(Instruction::CondJump {
+                    cond_var: lhs,
+                    then: short_circuit,
+                    els: eval_rhs,
+                });
+                self.builder.emit_label(short_circuit);
+                self.builder.emit_instruction(Instruction::LoadBool {
+                    target: tgt,
+                    value: true,
+                });
+                self.builder.emit_instruction(Instruction::Jump(end));
+                self.builder.emit_label(eval_rhs);
+            }
+            BoolOperation::And => {
+                let short_circuit = self.builder.label();
+                let eval_rhs = self.builder.label();
+                self.builder.emit_instruction(Instruction::CondJump {
+                    cond_var: lhs,
+                    then: eval_rhs,
+                    els: short_circuit,
+                });
+                self.builder.emit_label(short_circuit);
+                self.builder.emit_instruction(Instruction::LoadBool {
+                    target: tgt,
+                    value: false,
+                });
+                self.builder.emit_instruction(Instruction::Jump(end));
+                self.builder.emit_label(eval_rhs);
+            }
+            _ => {}
+        }
+
+        let rhs = self.gen_expression(&expression.rhs).expect("type checked");
 
         self.builder.emit_instruction(Instruction::BoolOp {
             operation: op,
@@ -297,6 +335,8 @@ impl FunctionCodegen<'_> {
             lhs,
             rhs,
         });
+
+        self.builder.emit_label(end);
 
         tgt
     }
@@ -373,6 +413,26 @@ mod tests {
         assert_eq!(test("true and true and false"), Some(Value::Bool(false)));
         assert_eq!(test("true and true and true"), Some(Value::Bool(true)));
         assert_eq!(test("false and true and true"), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_short_circuit() {
+        assert_eq!(
+            test("var res = 1; true and {res = 2; true}; res"),
+            Some(Value::Int(2))
+        );
+        assert_eq!(
+            test("var res = 1; false and {res = 2; true}; res"),
+            Some(Value::Int(1))
+        );
+        assert_eq!(
+            test("var res = 1; false or {res = 2; true}; res"),
+            Some(Value::Int(2))
+        );
+        assert_eq!(
+            test("var res = 1; true or {res = 2; true}; res"),
+            Some(Value::Int(1))
+        );
     }
 
     #[test]
