@@ -6,7 +6,8 @@ use crate::{
     scope::Scope,
     syntax::ast::{
         Ast, BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression,
-        Identifier, Node, Primary, UnaryExpression, UnaryOperator, VarExpression,
+        Identifier, IfExpression, Node, NodeId, Primary, UnaryExpression, UnaryOperator,
+        VarExpression,
     },
     types::{Typ, TypMap},
 };
@@ -26,7 +27,7 @@ impl FunctionCodegen<'_> {
             }
             Expression::Unary(unary_expression) => Some(self.gen_unary(unary_expression)),
             Expression::Primary(primary) => Some(self.gen_primary(primary)),
-            Expression::If(if_expression) => todo!(),
+            Expression::If(if_expression) => self.gen_if_expression(expr.id, if_expression),
             Expression::While(while_expression) => todo!(),
             Expression::Call(call_expression) => self.gen_call_expression(call_expression),
             Expression::Block(block_expression) => self.gen_block(block_expression),
@@ -35,6 +36,63 @@ impl FunctionCodegen<'_> {
                 None
             }
         }
+    }
+
+    fn gen_if_expression(&mut self, id: NodeId, expression: &IfExpression) -> Option<Variable> {
+        let cond = self
+            .gen_expression(&expression.condition)
+            .expect("type checked");
+        let typ = self
+            .typmap
+            .typs
+            .get(&id)
+            .expect("all expressions are in the typ map");
+        let then = self.builder.label();
+        let els = self.builder.label();
+        let done = self.builder.label();
+
+        let res = match typ {
+            Typ::Unit => None,
+            _ => Some(self.variable()),
+        };
+
+        self.builder.emit_instruction(Instruction::CondJump {
+            cond_var: cond,
+            then,
+            els,
+        });
+
+        self.builder.emit_label(then);
+
+        let then_res = self.gen_expression(&expression.then);
+
+        if let Some(res) = res {
+            let then_res = then_res.expect("type checked");
+            self.builder.emit_instruction(Instruction::Copy {
+                from: then_res,
+                to: res,
+            });
+        }
+
+        self.builder.emit_instruction(Instruction::Jump(done));
+
+        self.builder.emit_label(els);
+
+        if let Some(els_expression) = &expression.els {
+            let els_res = self.gen_expression(els_expression);
+
+            if let Some(res) = res {
+                let els_res = els_res.expect("type checked");
+                self.builder.emit_instruction(Instruction::Copy {
+                    from: els_res,
+                    to: res,
+                });
+            }
+        }
+
+        self.builder.emit_label(done);
+
+        res
     }
 
     fn gen_call_expression(&mut self, expression: &CallExpression) -> Option<Variable> {
@@ -310,5 +368,28 @@ mod tests {
         assert_eq!(test("var a = 1; a = 2; a"), Some(Value::Int(2)));
         assert_eq!(test("var a = 1; var a = 2; a"), Some(Value::Int(2)));
         assert_eq!(test("var a = 1; {var a = 2} a"), Some(Value::Int(1)));
+    }
+
+    #[test]
+    fn test_if() {
+        assert_eq!(
+            test("var a = 1; if true then {a = 2}; a"),
+            Some(Value::Int(2))
+        );
+        assert_eq!(
+            test("var a = 1; if false then {a = 2}; a"),
+            Some(Value::Int(1))
+        );
+        assert_eq!(
+            test("var a = 1; if false then {a = 2} else {a = 3}; a"),
+            Some(Value::Int(3))
+        );
+        assert_eq!(
+            test("var a = 1; if true then {a = 2} else {a = 3}; a"),
+            Some(Value::Int(2))
+        );
+        assert_eq!(test("if true then {1} else 2"), Some(Value::Int(1)));
+        assert_eq!(test("if false then {1} else 2"), Some(Value::Int(2)));
+        assert_eq!(test("if false then {1}"), None);
     }
 }
