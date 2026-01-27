@@ -22,8 +22,11 @@ pub enum IntOperation {
     Divide,
     Modulo,
     Equal,
+    NotEqual,
     LessThan,
     LessEqual,
+    GreaterThan,
+    GreaterEqual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,6 +35,7 @@ pub enum BoolOperation {
     And,
     Xor,
     Equal,
+    NotEqual,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -144,8 +144,11 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
                         IntOperation::Divide => Value::Int(lhs / rhs),
                         IntOperation::Modulo => Value::Int(lhs % rhs),
                         IntOperation::Equal => Value::Bool(lhs == rhs),
+                        IntOperation::NotEqual => Value::Bool(lhs != rhs),
                         IntOperation::LessThan => Value::Bool(lhs < rhs),
                         IntOperation::LessEqual => Value::Bool(lhs <= rhs),
+                        IntOperation::GreaterThan => Value::Bool(lhs > rhs),
+                        IntOperation::GreaterEqual => Value::Bool(lhs >= rhs),
                     };
 
                     ctx.set_value(*target, res);
@@ -171,6 +174,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
                         BoolOperation::And => lhs && rhs,
                         BoolOperation::Xor => lhs ^ rhs,
                         BoolOperation::Equal => lhs == rhs,
+                        BoolOperation::NotEqual => lhs != rhs,
                     };
 
                     ctx.set_value(*target, Value::Bool(res));
