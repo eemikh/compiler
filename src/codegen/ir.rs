@@ -6,7 +6,7 @@ use crate::{
     scope::Scope,
     syntax::ast::{
         Ast, BinaryExpression, BinaryOperator, BlockExpression, Expression, Identifier, Node,
-        Primary,
+        Primary, UnaryExpression, UnaryOperator,
     },
     types::{Typ, TypMap},
 };
@@ -24,7 +24,7 @@ impl FunctionCodegen<'_> {
             Expression::Binary(binary_expression) => {
                 Some(self.gen_binary_expression(binary_expression))
             }
-            Expression::Unary(unary_expression) => todo!(),
+            Expression::Unary(unary_expression) => Some(self.gen_unary(unary_expression)),
             Expression::Primary(primary) => Some(self.gen_primary(primary)),
             Expression::If(if_expression) => todo!(),
             Expression::While(while_expression) => todo!(),
@@ -32,6 +32,41 @@ impl FunctionCodegen<'_> {
             Expression::Block(block_expression) => self.gen_block(block_expression),
             Expression::Var(var_expression) => todo!(),
         }
+    }
+
+    fn gen_unary(&mut self, unary: &UnaryExpression) -> Variable {
+        let target = self.variable();
+        let temp = self.variable();
+        let operand = self.gen_expression(&unary.operand).expect("type checked");
+
+        match unary.operator {
+            UnaryOperator::Not => {
+                self.builder.emit_instruction(Instruction::LoadBool {
+                    target: temp,
+                    value: true,
+                });
+                self.builder.emit_instruction(Instruction::BoolOp {
+                    operation: BoolOperation::Xor,
+                    target,
+                    lhs: temp,
+                    rhs: operand,
+                });
+            }
+            UnaryOperator::Negate => {
+                self.builder.emit_instruction(Instruction::LoadInt {
+                    target: temp,
+                    value: 0,
+                });
+                self.builder.emit_instruction(Instruction::IntOp {
+                    operation: IntOperation::Subtract,
+                    target,
+                    lhs: temp,
+                    rhs: operand,
+                });
+            }
+        }
+
+        target
     }
 
     fn gen_block(&mut self, block: &BlockExpression) -> Option<Variable> {
@@ -207,11 +242,39 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_binary() {
-        let ast = parse("1 + 1").0.unwrap();
+    fn test(code: &str) -> Option<Value> {
+        let ast = parse(code).0.unwrap();
         let typmap = typecheck(&ast).unwrap();
         let ir = gen_ir(&ast, &typmap);
-        assert_eq!(interpret(&ir), Some(Value::Int(2)));
+        interpret(&ir)
+    }
+
+    #[test]
+    fn test_binary() {
+        assert_eq!(test("1 + 1"), Some(Value::Int(2)));
+        assert_eq!(test("2 * 3"), Some(Value::Int(6)));
+        assert_eq!(test("48 / 6"), Some(Value::Int(8)));
+        assert_eq!(test("48 - 6"), Some(Value::Int(42)));
+        assert_eq!(test("true or false"), Some(Value::Bool(true)));
+        assert_eq!(test("false or false"), Some(Value::Bool(false)));
+        assert_eq!(test("true and true and false"), Some(Value::Bool(false)));
+        assert_eq!(test("true and true and true"), Some(Value::Bool(true)));
+        assert_eq!(test("false and true and true"), Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn test_unary() {
+        assert_eq!(test("-1"), Some(Value::Int(-1)));
+        assert_eq!(test("not true"), Some(Value::Bool(false)));
+        assert_eq!(test("not not true"), Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_block() {
+        assert_eq!(test("2 + {1 + 1};"), None);
+        assert_eq!(test("{1 + 1}"), Some(Value::Int(2)));
+        assert_eq!(test("1 + 1; 2 + 2; 0"), Some(Value::Int(0)));
+        assert_eq!(test("{1 + 1} {2 + 2} 0"), Some(Value::Int(0)));
+        assert_eq!(test("{1 + 1}; {2 + 2}; 0"), Some(Value::Int(0)));
     }
 }
