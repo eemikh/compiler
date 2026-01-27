@@ -7,7 +7,7 @@ use crate::{
     syntax::ast::{
         Ast, BinaryExpression, BinaryOperator, BlockExpression, CallExpression, Expression,
         Identifier, IfExpression, Node, NodeId, Primary, UnaryExpression, UnaryOperator,
-        VarExpression,
+        VarExpression, WhileExpression,
     },
     types::{Typ, TypMap},
 };
@@ -28,11 +28,39 @@ impl FunctionCodegen<'_> {
             Expression::Unary(unary_expression) => self.gen_unary(unary_expression),
             Expression::Primary(primary) => self.gen_primary(primary),
             Expression::If(if_expression) => self.gen_if_expression(expr.id, if_expression),
-            Expression::While(while_expression) => todo!(),
+            Expression::While(while_expression) => self.gen_while_expression(while_expression),
             Expression::Call(call_expression) => self.gen_call_expression(call_expression),
             Expression::Block(block_expression) => self.gen_block(block_expression),
             Expression::Var(var_expression) => self.gen_var_expression(var_expression),
         }
+    }
+
+    fn gen_while_expression(&mut self, expression: &WhileExpression) -> Option<Variable> {
+        let start = self.builder.label();
+        let body = self.builder.label();
+        let end = self.builder.label();
+
+        self.builder.emit_label(start);
+
+        let cond = self
+            .gen_expression(&expression.condition)
+            .expect("type checked");
+
+        self.builder.emit_instruction(Instruction::CondJump {
+            cond_var: cond,
+            then: body,
+            els: end,
+        });
+
+        self.builder.emit_label(body);
+
+        self.gen_expression(&expression.body);
+
+        self.builder.emit_instruction(Instruction::Jump(start));
+
+        self.builder.emit_label(end);
+
+        None
     }
 
     fn gen_if_expression(&mut self, id: NodeId, expression: &IfExpression) -> Option<Variable> {
@@ -392,5 +420,17 @@ mod tests {
         assert_eq!(test("if true then {1} else 2"), Some(Value::Int(1)));
         assert_eq!(test("if false then {1} else 2"), Some(Value::Int(2)));
         assert_eq!(test("if false then {1}"), None);
+    }
+
+    #[test]
+    fn test_while() {
+        assert_eq!(
+            test("var a = 1; while a < 10 do {a = a + 1}; a"),
+            Some(Value::Int(10))
+        );
+        assert_eq!(
+            test("var a = 1; while a > 10 do {a = a + 1}; a"),
+            Some(Value::Int(1))
+        );
     }
 }
