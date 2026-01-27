@@ -478,4 +478,42 @@ mod tests {
             Some(Value::Int(88))
         );
     }
+
+    #[test]
+    fn digit_sum() {
+        assert_eq!(
+            test(
+                "
+                    var num = 1659327469345786762;
+                    var sum: Int = 0;
+                    while num > 0 do {
+                    	var digit = num % 10;
+                    	sum = sum + digit;
+                    	num = num / 10;
+                    }
+                    sum
+                "
+            ),
+            Some(Value::Int(100))
+        );
+    }
+
+    #[test]
+    fn primality_test() {
+        assert_eq!(
+            test(
+                "
+                var n = 83;
+                var divisor = n / 2;
+                var is_prime = true;
+                while divisor != 1 do {
+                    if n % divisor == 0 then is_prime = false;
+                    divisor = divisor - 1; # this is a comment
+                }
+                is_prime
+                "
+            ),
+            Some(Value::Bool(true))
+        );
+    }
 }
