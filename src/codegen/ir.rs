@@ -433,4 +433,49 @@ mod tests {
             Some(Value::Int(1))
         );
     }
+
+    #[test]
+    fn collatz() {
+        assert_eq!(
+            test(
+                "
+                    var i = 27;
+                    var c = 0;
+                    while i != 1 do {
+                        c = c + 1;
+                        if i % 2 == 0 then {
+                            i = i / 2;
+                        } else {
+                            i = 3 * i + 1;
+                        }
+                    }
+                    c
+                "
+            ),
+            Some(Value::Int(111))
+        );
+    }
+
+    #[test]
+    fn fibonacci() {
+        assert_eq!(
+            test(
+                "
+                    var sum = 0;
+                    var last1 = 1;
+                    var last2 = 0;
+                    var c = 0;
+                    while c < 9 do {
+                        sum = sum + last1;
+                        c = c + 1;
+                        var tmp = last1 + last2;
+                        last2 = last1;
+                        last1 = tmp;
+                    }
+                    sum
+                "
+            ),
+            Some(Value::Int(88))
+        );
+    }
 }
