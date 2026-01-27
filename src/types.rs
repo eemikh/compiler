@@ -179,6 +179,18 @@ fn typecheck_expression(
                 | BinaryOperator::Divide
                 | BinaryOperator::Modulo => Typ::Int,
                 BinaryOperator::Equals => {
+                    match binary_expression.lhs.item {
+                        Expression::Primary(Primary::Identifier(_)) => {}
+                        _ => {
+                            env.error(TypError {
+                                node: binary_expression.lhs.id,
+                                kind: TypErrorKind::InvalidTyp,
+                            });
+
+                            return Err(AnyTypError {});
+                        }
+                    }
+
                     if let (Ok(lhs), Ok(rhs)) = (lhs, rhs)
                         && lhs == rhs
                     {
@@ -487,6 +499,11 @@ mod tests {
                 expected: Typ::Int,
                 got: Typ::Bool
             }
+        );
+
+        assert_eq!(
+            module_to_typ("var a = 1; a + 1 = 1;").unwrap_err()[0].kind,
+            TypErrorKind::InvalidTyp,
         );
     }
 }
