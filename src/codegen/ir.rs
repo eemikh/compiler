@@ -6,7 +6,7 @@ use crate::{
     scope::Scope,
     syntax::ast::{
         Ast, BinaryExpression, BinaryOperator, BlockExpression, Expression, Identifier, Node,
-        Primary, UnaryExpression, UnaryOperator,
+        Primary, UnaryExpression, UnaryOperator, VarExpression,
     },
     types::{Typ, TypMap},
 };
@@ -30,8 +30,18 @@ impl FunctionCodegen<'_> {
             Expression::While(while_expression) => todo!(),
             Expression::Call(call_expression) => todo!(),
             Expression::Block(block_expression) => self.gen_block(block_expression),
-            Expression::Var(var_expression) => todo!(),
+            Expression::Var(var_expression) => {
+                self.gen_var_expression(var_expression);
+                None
+            }
         }
+    }
+
+    fn gen_var_expression(&mut self, expression: &VarExpression) {
+        let val = self
+            .gen_expression(&expression.value)
+            .expect("type checked");
+        self.scope.create_variable(expression.name.clone(), val);
     }
 
     fn gen_unary(&mut self, unary: &UnaryExpression) -> Variable {
@@ -276,5 +286,13 @@ mod tests {
         assert_eq!(test("1 + 1; 2 + 2; 0"), Some(Value::Int(0)));
         assert_eq!(test("{1 + 1} {2 + 2} 0"), Some(Value::Int(0)));
         assert_eq!(test("{1 + 1}; {2 + 2}; 0"), Some(Value::Int(0)));
+    }
+
+    #[test]
+    fn test_var() {
+        assert_eq!(test("var a = 1; a"), Some(Value::Int(1)));
+        assert_eq!(test("var a = 1; a = 2; a"), Some(Value::Int(2)));
+        assert_eq!(test("var a = 1; var a = 2; a"), Some(Value::Int(2)));
+        assert_eq!(test("var a = 1; {var a = 2} a"), Some(Value::Int(1)));
     }
 }
