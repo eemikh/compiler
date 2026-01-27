@@ -1056,6 +1056,27 @@ mod tests {
             .to_string(),
             "(= x (block (block (call f a)) (block b)))"
         );
+
+        // { if true then 1 + {1} 1 }
+        assert_eq!(
+            quick_parser(&token_vec(&[
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Identifier("if"), 2),
+                T(TokenKind::Identifier("true"), 4),
+                T(TokenKind::Identifier("then"), 4),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::Plus, 1),
+                T(TokenKind::LBrace, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+                T(TokenKind::Integer(1), 1),
+                T(TokenKind::RBrace, 1),
+            ]))
+            .parse_expression()
+            .unwrap()
+            .to_string(),
+            "(block (if true (+ 1 (block 1))) 1)"
+        );
     }
 
     #[test]
