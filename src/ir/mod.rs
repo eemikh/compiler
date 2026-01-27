@@ -3,6 +3,8 @@ use std::collections::HashMap;
 mod builder;
 mod interpreter;
 
+pub use builder::{FunctionBuilder, ModuleBuilder};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LabelId(u32);
 
@@ -12,7 +14,7 @@ pub struct FunctionId(u32);
 /// A reference to a variable. The reference is only valid for the function it was created in; using
 /// it in any other function may cause undesired behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Variable(u32);
+pub struct Variable(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntOperation {

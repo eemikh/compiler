@@ -1,6 +1,7 @@
 #![feature(assert_matches)]
 use std::env::args;
 
+mod codegen;
 mod ir;
 mod scope;
 mod syntax;
