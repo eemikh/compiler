@@ -25,16 +25,13 @@ impl FunctionCodegen<'_> {
             Expression::Binary(binary_expression) => {
                 Some(self.gen_binary_expression(binary_expression))
             }
-            Expression::Unary(unary_expression) => Some(self.gen_unary(unary_expression)),
-            Expression::Primary(primary) => Some(self.gen_primary(primary)),
+            Expression::Unary(unary_expression) => self.gen_unary(unary_expression),
+            Expression::Primary(primary) => self.gen_primary(primary),
             Expression::If(if_expression) => self.gen_if_expression(expr.id, if_expression),
             Expression::While(while_expression) => todo!(),
             Expression::Call(call_expression) => self.gen_call_expression(call_expression),
             Expression::Block(block_expression) => self.gen_block(block_expression),
-            Expression::Var(var_expression) => {
-                self.gen_var_expression(var_expression);
-                None
-            }
+            Expression::Var(var_expression) => self.gen_var_expression(var_expression),
         }
     }
 
@@ -111,14 +108,16 @@ impl FunctionCodegen<'_> {
         todo!()
     }
 
-    fn gen_var_expression(&mut self, expression: &VarExpression) {
+    fn gen_var_expression(&mut self, expression: &VarExpression) -> Option<Variable> {
         let val = self
             .gen_expression(&expression.value)
             .expect("type checked");
         self.scope.create_variable(expression.name.clone(), val);
+
+        None
     }
 
-    fn gen_unary(&mut self, unary: &UnaryExpression) -> Variable {
+    fn gen_unary(&mut self, unary: &UnaryExpression) -> Option<Variable> {
         let target = self.variable();
         let temp = self.variable();
         let operand = self.gen_expression(&unary.operand).expect("type checked");
@@ -150,7 +149,7 @@ impl FunctionCodegen<'_> {
             }
         }
 
-        target
+        Some(target)
     }
 
     fn gen_block(&mut self, block: &BlockExpression) -> Option<Variable> {
@@ -170,7 +169,7 @@ impl FunctionCodegen<'_> {
         res
     }
 
-    fn gen_primary(&mut self, primary: &Primary) -> Variable {
+    fn gen_primary(&mut self, primary: &Primary) -> Option<Variable> {
         match primary {
             Primary::Bool(value) => {
                 let target = self.variable();
@@ -180,7 +179,7 @@ impl FunctionCodegen<'_> {
                     value: *value,
                 });
 
-                target
+                Some(target)
             }
             Primary::Integer(value) => {
                 let target = self.variable();
@@ -190,12 +189,14 @@ impl FunctionCodegen<'_> {
                     value: *value,
                 });
 
-                target
+                Some(target)
             }
-            Primary::Identifier(identifier) => *self
-                .scope
-                .lookup_variable(identifier)
-                .expect("type checked"),
+            Primary::Identifier(identifier) => Some(
+                *self
+                    .scope
+                    .lookup_variable(identifier)
+                    .expect("type checked"),
+            ),
         }
     }
 
