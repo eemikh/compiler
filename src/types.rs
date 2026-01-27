@@ -458,6 +458,27 @@ mod tests {
     }
 
     #[test]
+    fn test_assignment() {
+        assert_eq!(module_to_typ("var a = 1; a").unwrap(), Typ::Int);
+        assert_eq!(
+            module_to_typ("var a = 1; var a = true; a").unwrap(),
+            Typ::Bool
+        );
+        assert_eq!(
+            module_to_typ("var a = 1; {var a = true} a").unwrap(),
+            Typ::Int
+        );
+        assert_eq!(
+            module_to_typ("var a = 1; {var a = true}").unwrap(),
+            Typ::Unit
+        );
+        assert_eq!(
+            module_to_typ("var a = 1; {var a = true}; a = 2").unwrap(),
+            Typ::Int
+        );
+    }
+
+    #[test]
     fn test_errors() {
         assert_eq!(
             module_to_typ("var a: Int = print_int(1)").unwrap_err()[0].kind,
