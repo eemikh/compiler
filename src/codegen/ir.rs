@@ -20,11 +20,9 @@ struct FunctionCodegen<'a> {
 }
 
 impl FunctionCodegen<'_> {
-    fn gen_expression(&mut self, expr: &Node<Expression>) -> Option<Variable> {
+    fn gen_expression(&mut self, expr: &Node<Expression>) -> Variable {
         match &expr.item {
-            Expression::Binary(binary_expression) => {
-                Some(self.gen_binary_expression(binary_expression))
-            }
+            Expression::Binary(binary_expression) => self.gen_binary_expression(binary_expression),
             Expression::Unary(unary_expression) => self.gen_unary(unary_expression),
             Expression::Primary(primary) => self.gen_primary(primary),
             Expression::If(if_expression) => self.gen_if_expression(expr.id, if_expression),
@@ -35,16 +33,14 @@ impl FunctionCodegen<'_> {
         }
     }
 
-    fn gen_while_expression(&mut self, expression: &WhileExpression) -> Option<Variable> {
+    fn gen_while_expression(&mut self, expression: &WhileExpression) -> Variable {
         let start = self.builder.label();
         let body = self.builder.label();
         let end = self.builder.label();
 
         self.builder.emit_label(start);
 
-        let cond = self
-            .gen_expression(&expression.condition)
-            .expect("type checked");
+        let cond = self.gen_expression(&expression.condition);
 
         self.builder.emit_instruction(Instruction::CondJump {
             cond_var: cond,
@@ -60,13 +56,11 @@ impl FunctionCodegen<'_> {
 
         self.builder.emit_label(end);
 
-        None
+        self.unit()
     }
 
-    fn gen_if_expression(&mut self, id: NodeId, expression: &IfExpression) -> Option<Variable> {
-        let cond = self
-            .gen_expression(&expression.condition)
-            .expect("type checked");
+    fn gen_if_expression(&mut self, id: NodeId, expression: &IfExpression) -> Variable {
+        let cond = self.gen_expression(&expression.condition);
         let typ = self
             .typmap
             .typs
@@ -92,7 +86,6 @@ impl FunctionCodegen<'_> {
         let then_res = self.gen_expression(&expression.then);
 
         if let Some(res) = res {
-            let then_res = then_res.expect("type checked");
             self.builder.emit_instruction(Instruction::Copy {
                 from: then_res,
                 to: res,
@@ -107,7 +100,6 @@ impl FunctionCodegen<'_> {
             let els_res = self.gen_expression(els_expression);
 
             if let Some(res) = res {
-                let els_res = els_res.expect("type checked");
                 self.builder.emit_instruction(Instruction::Copy {
                     from: els_res,
                     to: res,
@@ -117,14 +109,17 @@ impl FunctionCodegen<'_> {
 
         self.builder.emit_label(done);
 
-        res
+        match res {
+            Some(res) => res,
+            None => self.unit(),
+        }
     }
 
-    fn gen_call_expression(&mut self, expression: &CallExpression) -> Option<Variable> {
+    fn gen_call_expression(&mut self, expression: &CallExpression) -> Variable {
         let params = expression
             .args
             .iter()
-            .map(|expr| self.gen_expression(expr).expect("type checked"))
+            .map(|expr| self.gen_expression(expr))
             .collect();
 
         self.builder.emit_instruction(Instruction::Call {
@@ -136,19 +131,17 @@ impl FunctionCodegen<'_> {
         todo!()
     }
 
-    fn gen_var_expression(&mut self, expression: &VarExpression) -> Option<Variable> {
-        let val = self
-            .gen_expression(&expression.value)
-            .expect("type checked");
+    fn gen_var_expression(&mut self, expression: &VarExpression) -> Variable {
+        let val = self.gen_expression(&expression.value);
         self.scope.create_variable(expression.name.clone(), val);
 
-        None
+        self.unit()
     }
 
-    fn gen_unary(&mut self, unary: &UnaryExpression) -> Option<Variable> {
+    fn gen_unary(&mut self, unary: &UnaryExpression) -> Variable {
         let target = self.variable();
         let temp = self.variable();
-        let operand = self.gen_expression(&unary.operand).expect("type checked");
+        let operand = self.gen_expression(&unary.operand);
 
         match unary.operator {
             UnaryOperator::Not => {
@@ -177,10 +170,10 @@ impl FunctionCodegen<'_> {
             }
         }
 
-        Some(target)
+        target
     }
 
-    fn gen_block(&mut self, block: &BlockExpression) -> Option<Variable> {
+    fn gen_block(&mut self, block: &BlockExpression) -> Variable {
         self.scope.new_scope();
 
         for expr in &block.expressions {
@@ -189,7 +182,7 @@ impl FunctionCodegen<'_> {
 
         let res = match &block.result_expression {
             Some(res_expr) => self.gen_expression(res_expr),
-            None => None,
+            None => self.unit(),
         };
 
         self.scope.remove_scope();
@@ -197,7 +190,7 @@ impl FunctionCodegen<'_> {
         res
     }
 
-    fn gen_primary(&mut self, primary: &Primary) -> Option<Variable> {
+    fn gen_primary(&mut self, primary: &Primary) -> Variable {
         match primary {
             Primary::Bool(value) => {
                 let target = self.variable();
@@ -207,7 +200,7 @@ impl FunctionCodegen<'_> {
                     value: *value,
                 });
 
-                Some(target)
+                target
             }
             Primary::Integer(value) => {
                 let target = self.variable();
@@ -217,14 +210,12 @@ impl FunctionCodegen<'_> {
                     value: *value,
                 });
 
-                Some(target)
+                target
             }
-            Primary::Identifier(identifier) => Some(
-                *self
-                    .scope
-                    .lookup_variable(identifier)
-                    .expect("type checked"),
-            ),
+            Primary::Identifier(identifier) => *self
+                .scope
+                .lookup_variable(identifier)
+                .expect("type checked"),
         }
     }
 
@@ -232,7 +223,16 @@ impl FunctionCodegen<'_> {
         match self.typmap.typs[&expression.lhs.id] {
             Typ::Int => self.gen_int_binary_expression(expression),
             Typ::Bool => self.gen_bool_binary_expression(expression),
-            _ => unreachable!("type checker won't allow"),
+            // the only allowed operation with the unit type and functions is assignment (already
+            // checked by the type checker)
+            Typ::Unit | Typ::Function { .. } => match &expression.lhs.item {
+                Expression::Primary(Primary::Identifier(identifier)) => {
+                    assert_eq!(expression.operator, BinaryOperator::Equals);
+
+                    self.gen_assignment(identifier, &expression.rhs)
+                }
+                _ => unreachable!("type checked"),
+            },
         }
     }
 
@@ -258,8 +258,8 @@ impl FunctionCodegen<'_> {
             _ => unreachable!("type checker won't allow"),
         };
 
-        let lhs = self.gen_expression(&expression.lhs).expect("type checked");
-        let rhs = self.gen_expression(&expression.rhs).expect("type checked");
+        let lhs = self.gen_expression(&expression.lhs);
+        let rhs = self.gen_expression(&expression.rhs);
         let tgt = self.variable();
 
         self.builder.emit_instruction(Instruction::IntOp {
@@ -288,7 +288,7 @@ impl FunctionCodegen<'_> {
         };
 
         let tgt = self.variable();
-        let lhs = self.gen_expression(&expression.lhs).expect("type checked");
+        let lhs = self.gen_expression(&expression.lhs);
         let end = self.builder.label();
 
         match op {
@@ -327,7 +327,7 @@ impl FunctionCodegen<'_> {
             _ => {}
         }
 
-        let rhs = self.gen_expression(&expression.rhs).expect("type checked");
+        let rhs = self.gen_expression(&expression.rhs);
 
         self.builder.emit_instruction(Instruction::BoolOp {
             operation: op,
@@ -342,7 +342,7 @@ impl FunctionCodegen<'_> {
     }
 
     fn gen_assignment(&mut self, tgt: &Identifier, rhs: &Node<Expression>) -> Variable {
-        let from = self.gen_expression(rhs).expect("type checked");
+        let from = self.gen_expression(rhs);
         let tgt = self.scope.lookup_variable(tgt).expect("type checked");
 
         self.builder
@@ -355,7 +355,8 @@ impl FunctionCodegen<'_> {
         self.scope.new_scope();
         let var = self.gen_expression(body);
 
-        self.builder.emit_instruction(Instruction::Return(var));
+        self.builder
+            .emit_instruction(Instruction::Return(Some(var)));
         self.builder.build()
     }
 
@@ -365,15 +366,23 @@ impl FunctionCodegen<'_> {
 
         var
     }
+
+    fn unit(&self) -> Variable {
+        Variable(0)
+    }
 }
 
 pub fn gen_ir(ast: &Ast, typmap: &TypMap) -> ir::Module {
-    let codegen = FunctionCodegen {
+    let mut codegen = FunctionCodegen {
         builder: FunctionBuilder::new(),
         typmap,
-        variables: 0,
+        variables: 1,
         scope: Scope::new(),
     };
+
+    codegen
+        .builder
+        .emit_instruction(Instruction::LoadUnit(codegen.unit()));
 
     let function = codegen.gen_body(&ast.root.body);
     let mut module = ModuleBuilder::new();
@@ -395,7 +404,7 @@ mod tests {
 
     use super::*;
 
-    fn test(code: &str) -> Option<Value> {
+    fn test(code: &str) -> Value {
         let ast = parse(code).0.unwrap();
         let typmap = typecheck(&ast).unwrap();
         let ir = gen_ir(&ast, &typmap);
@@ -404,93 +413,89 @@ mod tests {
 
     #[test]
     fn test_binary() {
-        assert_eq!(test("1 + 1"), Some(Value::Int(2)));
-        assert_eq!(test("2 * 3"), Some(Value::Int(6)));
-        assert_eq!(test("48 / 6"), Some(Value::Int(8)));
-        assert_eq!(test("48 - 6"), Some(Value::Int(42)));
-        assert_eq!(test("true or false"), Some(Value::Bool(true)));
-        assert_eq!(test("false or false"), Some(Value::Bool(false)));
-        assert_eq!(test("true and true and false"), Some(Value::Bool(false)));
-        assert_eq!(test("true and true and true"), Some(Value::Bool(true)));
-        assert_eq!(test("false and true and true"), Some(Value::Bool(false)));
+        assert_eq!(test("1 + 1"), Value::Int(2));
+        assert_eq!(test("2 * 3"), Value::Int(6));
+        assert_eq!(test("48 / 6"), Value::Int(8));
+        assert_eq!(test("48 - 6"), Value::Int(42));
+        assert_eq!(test("true or false"), Value::Bool(true));
+        assert_eq!(test("false or false"), Value::Bool(false));
+        assert_eq!(test("true and true and false"), Value::Bool(false));
+        assert_eq!(test("true and true and true"), Value::Bool(true));
+        assert_eq!(test("false and true and true"), Value::Bool(false));
     }
 
     #[test]
     fn test_short_circuit() {
         assert_eq!(
             test("var res = 1; true and {res = 2; true}; res"),
-            Some(Value::Int(2))
+            Value::Int(2)
         );
         assert_eq!(
             test("var res = 1; false and {res = 2; true}; res"),
-            Some(Value::Int(1))
+            Value::Int(1)
         );
         assert_eq!(
             test("var res = 1; false or {res = 2; true}; res"),
-            Some(Value::Int(2))
+            Value::Int(2)
         );
         assert_eq!(
             test("var res = 1; true or {res = 2; true}; res"),
-            Some(Value::Int(1))
+            Value::Int(1)
         );
     }
 
     #[test]
     fn test_unary() {
-        assert_eq!(test("-1"), Some(Value::Int(-1)));
-        assert_eq!(test("not true"), Some(Value::Bool(false)));
-        assert_eq!(test("not not true"), Some(Value::Bool(true)));
+        assert_eq!(test("-1"), Value::Int(-1));
+        assert_eq!(test("not true"), Value::Bool(false));
+        assert_eq!(test("not not true"), Value::Bool(true));
     }
 
     #[test]
     fn test_block() {
-        assert_eq!(test("2 + {1 + 1};"), None);
-        assert_eq!(test("{1 + 1}"), Some(Value::Int(2)));
-        assert_eq!(test("1 + 1; 2 + 2; 0"), Some(Value::Int(0)));
-        assert_eq!(test("{1 + 1} {2 + 2} 0"), Some(Value::Int(0)));
-        assert_eq!(test("{1 + 1}; {2 + 2}; 0"), Some(Value::Int(0)));
+        assert_eq!(test("2 + {1 + 1};"), Value::Unit);
+        assert_eq!(test("{1 + 1}"), Value::Int(2));
+        assert_eq!(test("1 + 1; 2 + 2; 0"), Value::Int(0));
+        assert_eq!(test("{1 + 1} {2 + 2} 0"), Value::Int(0));
+        assert_eq!(test("{1 + 1}; {2 + 2}; 0"), Value::Int(0));
     }
 
     #[test]
     fn test_var() {
-        assert_eq!(test("var a = 1; a"), Some(Value::Int(1)));
-        assert_eq!(test("var a = 1; a = 2; a"), Some(Value::Int(2)));
-        assert_eq!(test("var a = 1; var a = 2; a"), Some(Value::Int(2)));
-        assert_eq!(test("var a = 1; {var a = 2} a"), Some(Value::Int(1)));
+        assert_eq!(test("var a = 1; a"), Value::Int(1));
+        assert_eq!(test("var a = 1; a = 2; a"), Value::Int(2));
+        assert_eq!(test("var a = 1; var a = 2; a"), Value::Int(2));
+        assert_eq!(test("var a = 1; {var a = 2} a"), Value::Int(1));
+        assert_eq!(test("var a = {}; a"), Value::Unit);
+        assert_eq!(test("var a = {}; a = {}; {}"), Value::Unit);
     }
 
     #[test]
     fn test_if() {
-        assert_eq!(
-            test("var a = 1; if true then {a = 2}; a"),
-            Some(Value::Int(2))
-        );
-        assert_eq!(
-            test("var a = 1; if false then {a = 2}; a"),
-            Some(Value::Int(1))
-        );
+        assert_eq!(test("var a = 1; if true then {a = 2}; a"), Value::Int(2));
+        assert_eq!(test("var a = 1; if false then {a = 2}; a"), Value::Int(1));
         assert_eq!(
             test("var a = 1; if false then {a = 2} else {a = 3}; a"),
-            Some(Value::Int(3))
+            Value::Int(3)
         );
         assert_eq!(
             test("var a = 1; if true then {a = 2} else {a = 3}; a"),
-            Some(Value::Int(2))
+            Value::Int(2)
         );
-        assert_eq!(test("if true then {1} else 2"), Some(Value::Int(1)));
-        assert_eq!(test("if false then {1} else 2"), Some(Value::Int(2)));
-        assert_eq!(test("if false then {1}"), None);
+        assert_eq!(test("if true then {1} else 2"), Value::Int(1));
+        assert_eq!(test("if false then {1} else 2"), Value::Int(2));
+        assert_eq!(test("if false then {1}"), Value::Unit);
     }
 
     #[test]
     fn test_while() {
         assert_eq!(
             test("var a = 1; while a < 10 do {a = a + 1}; a"),
-            Some(Value::Int(10))
+            Value::Int(10)
         );
         assert_eq!(
             test("var a = 1; while a > 10 do {a = a + 1}; a"),
-            Some(Value::Int(1))
+            Value::Int(1)
         );
     }
 
@@ -512,7 +517,7 @@ mod tests {
                     c
                 "
             ),
-            Some(Value::Int(111))
+            Value::Int(111)
         );
     }
 
@@ -535,7 +540,7 @@ mod tests {
                     sum
                 "
             ),
-            Some(Value::Int(88))
+            Value::Int(88)
         );
     }
 
@@ -554,7 +559,7 @@ mod tests {
                     sum
                 "
             ),
-            Some(Value::Int(100))
+            Value::Int(100)
         );
     }
 
@@ -573,7 +578,7 @@ mod tests {
                     is_prime
                 "
             ),
-            Some(Value::Bool(true))
+            Value::Bool(true)
         );
     }
 }

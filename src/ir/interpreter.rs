@@ -6,6 +6,7 @@ use crate::ir::{BoolOperation, FunctionId, Instruction, IntOperation, LabelId, M
 pub enum Value {
     Int(i64),
     Bool(bool),
+    Unit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,7 +53,7 @@ impl Context<'_> {
     }
 }
 
-pub fn interpret(module: &Module) -> Option<Value> {
+pub fn interpret(module: &Module) -> Value {
     let mut ctx = Context {
         variables: Vec::new(),
         module,
@@ -63,7 +64,7 @@ pub fn interpret(module: &Module) -> Option<Value> {
     call_function(&mut ctx, module.entry)
 }
 
-fn call_function(ctx: &mut Context, function: FunctionId) -> Option<Value> {
+fn call_function(ctx: &mut Context, function: FunctionId) -> Value {
     let f = ctx.module.get_function(function).unwrap();
 
     let mut pc = 0;
@@ -71,8 +72,8 @@ fn call_function(ctx: &mut Context, function: FunctionId) -> Option<Value> {
         let flow = execute_instruction(ctx, instruction);
 
         match flow {
-            InstructionFlow::Return(Some(var)) => return Some(ctx.get_value(var).unwrap()),
-            InstructionFlow::Return(None) => return None,
+            InstructionFlow::Return(Some(var)) => return ctx.get_value(var).unwrap(),
+            InstructionFlow::Return(None) => return Value::Unit,
             InstructionFlow::Jump(label_id) => {
                 pc = *f.labels.get(&label_id).unwrap();
                 continue;
@@ -83,7 +84,7 @@ fn call_function(ctx: &mut Context, function: FunctionId) -> Option<Value> {
         pc += 1;
     }
 
-    None
+    Value::Unit
 }
 
 fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> InstructionFlow {
@@ -108,7 +109,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
             ctx.remove_scope();
 
             if let Some(ret_var) = return_value {
-                ctx.set_value(*ret_var, value.unwrap());
+                ctx.set_value(*ret_var, value);
             }
 
             InstructionFlow::Continue
@@ -198,6 +199,11 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
 
             InstructionFlow::Continue
         }
+        Instruction::LoadUnit(variable) => {
+            ctx.set_value(*variable, Value::Unit);
+
+            InstructionFlow::Continue
+        }
         Instruction::Return(variable) => InstructionFlow::Return(*variable),
     }
 }
@@ -236,7 +242,7 @@ mod tests {
         builder.build()
     }
 
-    fn test_wrapper(instructions: &[InstructionOrLabel]) -> Option<Value> {
+    fn test_wrapper(instructions: &[InstructionOrLabel]) -> Value {
         let module = build_module(instructions);
         let mut ctx = Context {
             variables: Vec::new(),
@@ -250,9 +256,9 @@ mod tests {
 
     #[test]
     fn test_return() {
-        assert_eq!(test_wrapper(&[I(Instruction::Return(None)),]), None);
+        assert_eq!(test_wrapper(&[I(Instruction::Return(None)),]), Value::Unit);
 
-        assert_eq!(test_wrapper(&[]), None);
+        assert_eq!(test_wrapper(&[]), Value::Unit);
     }
 
     #[test]
@@ -265,7 +271,7 @@ mod tests {
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Int(1234))
+            Value::Int(1234)
         );
 
         assert_eq!(
@@ -280,7 +286,7 @@ mod tests {
                 }),
                 I(Instruction::Return(Some(Variable(2)))),
             ]),
-            Some(Value::Bool(true))
+            Value::Bool(true)
         );
     }
 
@@ -332,7 +338,7 @@ mod tests {
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Int(3))
+            Value::Int(3)
         );
 
         assert_eq!(
@@ -353,7 +359,7 @@ mod tests {
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Bool(true))
+            Value::Bool(true)
         );
 
         assert_eq!(
@@ -374,7 +380,7 @@ mod tests {
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Bool(false))
+            Value::Bool(false)
         );
     }
 
@@ -396,7 +402,7 @@ mod tests {
                 L, // 2
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Int(1))
+            Value::Int(1)
         );
 
         assert_eq!(
@@ -422,7 +428,7 @@ mod tests {
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Int(1))
+            Value::Int(1)
         );
 
         assert_eq!(
@@ -448,7 +454,7 @@ mod tests {
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
-            Some(Value::Int(2))
+            Value::Int(2)
         );
     }
 }
