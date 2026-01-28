@@ -139,6 +139,29 @@ fn typecheck_module(env: &mut Environment, module: &Module) -> Result<Typ, AnyTy
     typecheck_expression(env, &module.body)
 }
 
+fn binary_op_is_typ_allowed(op: BinaryOperator, typ: &Typ) -> bool {
+    matches!(
+        (op, typ),
+        (BinaryOperator::Or | BinaryOperator::And, Typ::Bool)
+            | (
+                BinaryOperator::Add
+                    | BinaryOperator::Subtract
+                    | BinaryOperator::Multiply
+                    | BinaryOperator::Divide
+                    | BinaryOperator::Modulo
+                    | BinaryOperator::GreaterThan
+                    | BinaryOperator::GreaterEqual
+                    | BinaryOperator::LessThan
+                    | BinaryOperator::LessEqual,
+                Typ::Int
+            )
+            | (
+                BinaryOperator::EqualEqual | BinaryOperator::NotEqual | BinaryOperator::Equals,
+                _
+            )
+    )
+}
+
 fn typecheck_expression(
     env: &mut Environment,
     expression: &Node<Expression>,
@@ -148,20 +171,32 @@ fn typecheck_expression(
             let lhs = typecheck_expression(env, &binary_expression.lhs);
             let rhs = typecheck_expression(env, &binary_expression.rhs);
 
-            // TODO: check that the binary can accept the type
+            if let (Ok(lhs), Ok(rhs)) = (&lhs, &rhs) {
+                if lhs != rhs {
+                    env.error(TypError {
+                        node: expression.id,
+                        kind: TypErrorKind::BinaryMismatch {
+                            op: binary_expression.operator,
+                            // TODO: get rid of these clones (or make the clones very cheap)
+                            lhs: lhs.clone(),
+                            rhs: rhs.clone(),
+                        },
+                    });
+                }
 
-            if let (Ok(lhs), Ok(rhs)) = (&lhs, &rhs)
-                && lhs != rhs
-            {
-                env.error(TypError {
-                    node: expression.id,
-                    kind: TypErrorKind::BinaryMismatch {
-                        op: binary_expression.operator,
-                        // TODO: get rid of these clones (or make the clones very cheap)
-                        lhs: lhs.clone(),
-                        rhs: rhs.clone(),
-                    },
-                });
+                if !binary_op_is_typ_allowed(binary_expression.operator, lhs) {
+                    env.error(TypError {
+                        node: binary_expression.lhs.id,
+                        kind: TypErrorKind::InvalidTyp,
+                    });
+                }
+
+                if !binary_op_is_typ_allowed(binary_expression.operator, rhs) {
+                    env.error(TypError {
+                        node: binary_expression.rhs.id,
+                        kind: TypErrorKind::InvalidTyp,
+                    });
+                }
             }
 
             match binary_expression.operator {
