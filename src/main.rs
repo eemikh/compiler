@@ -11,6 +11,7 @@ mod syntax;
 mod types;
 
 // TODO: place somewhere appropriate
+#[derive(Debug, Clone)]
 pub struct Builtin<'a> {
     pub name: &'a str,
     pub params: &'a [Typ],

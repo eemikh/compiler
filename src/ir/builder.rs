@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
-use crate::ir::{Function, FunctionId, Instruction, LabelId, Module};
+use crate::ir::{Function, FunctionId, Instruction, InternalFunction, LabelId, Module};
 
 pub struct FunctionBuilder {
-    function: Function,
+    function: InternalFunction,
     labels: u32,
 }
 
 impl FunctionBuilder {
     pub fn new() -> Self {
         Self {
-            function: Function {
+            function: InternalFunction {
                 instructions: Vec::new(),
                 labels: HashMap::new(),
             },
@@ -18,7 +18,7 @@ impl FunctionBuilder {
         }
     }
 
-    pub fn build(self) -> Function {
+    pub fn build(self) -> InternalFunction {
         self.function
     }
 
@@ -119,7 +119,7 @@ mod tests {
 
         assert_eq!(
             builder.build(),
-            Function {
+            InternalFunction {
                 instructions: vec![i1, i2],
                 labels: HashMap::from([(LabelId(0), 1), (LabelId(1), 2)])
             }
@@ -140,17 +140,17 @@ mod tests {
         let mut builder = ModuleBuilder::new();
         let f1id = builder.function();
         let f2id = builder.function();
-        let f1 = Function {
+        let f1 = Function::Internal(InternalFunction {
             instructions: vec![],
             labels: HashMap::new(),
-        };
-        let f2 = Function {
+        });
+        let f2 = Function::Internal(InternalFunction {
             instructions: vec![Instruction::Copy {
                 from: Variable(0),
                 to: Variable(1),
             }],
             labels: HashMap::new(),
-        };
+        });
 
         builder.add_function(f2id, f2.clone());
         builder.add_function(f1id, f1.clone());

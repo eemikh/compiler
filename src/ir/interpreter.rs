@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 
-use crate::ir::{BoolOperation, FunctionId, Instruction, IntOperation, LabelId, Module, Variable};
+use crate::{
+    Builtin,
+    ir::{
+        BoolOperation, Function, FunctionId, Instruction, IntOperation, InternalFunction, LabelId,
+        Module, Variable,
+    },
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Value {
@@ -20,6 +26,7 @@ enum InstructionFlow {
 struct Context<'a> {
     variables: Vec<HashMap<Variable, Value>>,
     module: &'a Module,
+    builtins: &'a [Builtin<'a>],
 }
 
 impl Context<'_> {
@@ -53,10 +60,11 @@ impl Context<'_> {
     }
 }
 
-pub fn interpret(module: &Module) -> Value {
+pub fn interpret(module: &Module, builtins: &[Builtin]) -> Value {
     let mut ctx = Context {
         variables: Vec::new(),
         module,
+        builtins,
     };
 
     ctx.new_scope();
@@ -67,15 +75,22 @@ pub fn interpret(module: &Module) -> Value {
 fn call_function(ctx: &mut Context, function: FunctionId) -> Value {
     let f = ctx.module.get_function(function).unwrap();
 
+    match f {
+        Function::Internal(internal_function) => call_internal_function(ctx, internal_function),
+        Function::External(name) => todo!(),
+    }
+}
+
+fn call_internal_function(ctx: &mut Context, function: &InternalFunction) -> Value {
     let mut pc = 0;
-    while let Some(instruction) = f.instructions.get(pc) {
+    while let Some(instruction) = function.instructions.get(pc) {
         let flow = execute_instruction(ctx, instruction);
 
         match flow {
             InstructionFlow::Return(Some(var)) => return ctx.get_value(var).unwrap(),
             InstructionFlow::Return(None) => return Value::Unit,
             InstructionFlow::Jump(label_id) => {
-                pc = *f.labels.get(&label_id).unwrap();
+                pc = *function.labels.get(&label_id).unwrap();
                 continue;
             }
             InstructionFlow::Continue => {}
@@ -236,7 +251,7 @@ mod tests {
         }
 
         let fid = builder.function();
-        builder.add_function(fid, f.build());
+        builder.add_function(fid, Function::Internal(f.build()));
         builder.set_entry(fid);
 
         builder.build()
@@ -247,6 +262,7 @@ mod tests {
         let mut ctx = Context {
             variables: Vec::new(),
             module: &module,
+            builtins: &[],
         };
 
         ctx.new_scope();

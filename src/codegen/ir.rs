@@ -1,7 +1,8 @@
 use crate::{
+    Builtin,
     ir::{
-        self, BoolOperation, Function, FunctionBuilder, Instruction, IntOperation, ModuleBuilder,
-        Variable,
+        self, BoolOperation, Function, FunctionBuilder, Instruction, IntOperation,
+        InternalFunction, ModuleBuilder, Variable,
     },
     scope::Scope,
     syntax::ast::{
@@ -351,7 +352,7 @@ impl FunctionCodegen<'_> {
         *tgt
     }
 
-    fn gen_body(mut self, body: &Node<Expression>) -> Function {
+    fn gen_body(mut self, body: &Node<Expression>) -> InternalFunction {
         self.scope.new_scope();
         let var = self.gen_expression(body);
 
@@ -372,7 +373,7 @@ impl FunctionCodegen<'_> {
     }
 }
 
-pub fn gen_ir(ast: &Ast, typmap: &TypMap) -> ir::Module {
+pub fn gen_ir(ast: &Ast, typmap: &TypMap, builtins: &[Builtin]) -> ir::Module {
     let mut codegen = FunctionCodegen {
         builder: FunctionBuilder::new(),
         typmap,
@@ -384,7 +385,7 @@ pub fn gen_ir(ast: &Ast, typmap: &TypMap) -> ir::Module {
         .builder
         .emit_instruction(Instruction::LoadUnit(codegen.unit()));
 
-    let function = codegen.gen_body(&ast.root.body);
+    let function = Function::Internal(codegen.gen_body(&ast.root.body));
     let mut module = ModuleBuilder::new();
     let fid = module.function();
 
@@ -408,8 +409,8 @@ mod tests {
     fn test(code: &str) -> Value {
         let ast = parse(code).0.unwrap();
         let typmap = typecheck(&ast, stdlib::BUILTINS).unwrap();
-        let ir = gen_ir(&ast, &typmap);
-        interpret(&ir)
+        let ir = gen_ir(&ast, &typmap, stdlib::BUILTINS);
+        interpret(&ir, stdlib::BUILTINS)
     }
 
     #[test]

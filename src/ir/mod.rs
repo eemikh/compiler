@@ -84,10 +84,16 @@ pub enum Instruction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Function {
+pub struct InternalFunction {
     pub instructions: Vec<Instruction>,
     /// Maps a label ID to index in instructions
     pub labels: HashMap<LabelId, usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Function {
+    Internal(InternalFunction),
+    External(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
