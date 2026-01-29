@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{
+    Builtin,
     scope::Scope,
     syntax::ast::{
         Ast, BinaryOperator, Expression, Identifier, Module, Node, NodeId, Primary, UnaryOperator,
@@ -114,17 +115,20 @@ impl Environment {
     }
 }
 
-pub fn typecheck(ast: &Ast) -> Result<TypMap, Vec<TypError>> {
+pub fn typecheck(ast: &Ast, builtins: &[Builtin]) -> Result<TypMap, Vec<TypError>> {
     let mut env = Environment::new();
 
     env.scope.new_scope();
-    env.scope.create_variable(
-        Identifier(String::from("print_int")),
-        VarTyp::Known(Typ::Function {
-            params: vec![Typ::Int],
-            ret: Box::new(Typ::Unit),
-        }),
-    );
+
+    for builtin in builtins {
+        env.scope.create_variable(
+            Identifier(builtin.name.to_string()),
+            VarTyp::Known(Typ::Function {
+                params: builtin.params.to_vec(),
+                ret: Box::new(builtin.ret.clone()),
+            }),
+        );
+    }
 
     let _ = typecheck_module(&mut env, &ast.root);
 
@@ -456,18 +460,18 @@ fn typecheck_expression(
 
 #[cfg(test)]
 mod tests {
-    use crate::syntax::parse;
+    use crate::{stdlib, syntax::parse};
 
     use super::*;
 
     fn str_to_typemap(code: &str) -> Result<TypMap, Vec<TypError>> {
         let ast = parse(code).0.unwrap();
-        typecheck(&ast)
+        typecheck(&ast, stdlib::BUILTINS)
     }
 
     fn module_to_typ(code: &str) -> Result<Typ, Vec<TypError>> {
         let ast = parse(code).0.unwrap();
-        Ok(typecheck(&ast)?
+        Ok(typecheck(&ast, stdlib::BUILTINS)?
             .typs
             .get(&ast.root.body.id)
             .unwrap()
@@ -560,6 +564,29 @@ mod tests {
         assert_eq!(
             module_to_typ("var a = 1; a + 1 = 1;").unwrap_err()[0].kind,
             TypErrorKind::InvalidTyp,
+        );
+    }
+
+    #[test]
+    fn test_fun() {
+        assert_eq!(module_to_typ("read_int()").unwrap(), Typ::Int);
+        assert_eq!(module_to_typ("print_int(1)").unwrap(), Typ::Unit);
+        assert_eq!(module_to_typ("print_bool(true)").unwrap(), Typ::Unit);
+
+        assert_eq!(
+            module_to_typ("print_bool(1)").unwrap_err()[0].kind,
+            TypErrorKind::ExpectedTyp {
+                expected: Typ::Bool,
+                got: Typ::Int
+            }
+        );
+
+        assert_eq!(
+            module_to_typ("print_bool()").unwrap_err()[0].kind,
+            TypErrorKind::InvalidParameterCount {
+                expected: 1,
+                got: 0
+            }
         );
     }
 }

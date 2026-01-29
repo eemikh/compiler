@@ -398,6 +398,7 @@ pub fn gen_ir(ast: &Ast, typmap: &TypMap) -> ir::Module {
 mod tests {
     use crate::{
         ir::interpreter::{Value, interpret},
+        stdlib,
         syntax::parse,
         types::typecheck,
     };
@@ -406,7 +407,7 @@ mod tests {
 
     fn test(code: &str) -> Value {
         let ast = parse(code).0.unwrap();
-        let typmap = typecheck(&ast).unwrap();
+        let typmap = typecheck(&ast, stdlib::BUILTINS).unwrap();
         let ir = gen_ir(&ast, &typmap);
         interpret(&ir)
     }
