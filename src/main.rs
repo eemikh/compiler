@@ -1,7 +1,7 @@
 #![feature(assert_matches)]
 use std::env::args;
 
-use crate::{ir::interpreter::Value, types::Typ};
+use crate::{ir::Value, types::Typ};
 
 mod codegen;
 mod ir;

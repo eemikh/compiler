@@ -4,16 +4,9 @@ use crate::{
     Builtin,
     ir::{
         BoolOperation, Function, FunctionId, Instruction, IntOperation, InternalFunction, LabelId,
-        Module, Variable,
+        Module, Value, Variable,
     },
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Value {
-    Int(i64),
-    Bool(bool),
-    Unit,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum InstructionFlow {
@@ -204,13 +197,8 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
 
             InstructionFlow::Continue
         }
-        Instruction::LoadInt { target, value } => {
-            ctx.set_value(*target, Value::Int(*value as i64));
-
-            InstructionFlow::Continue
-        }
-        Instruction::LoadBool { target, value } => {
-            ctx.set_value(*target, Value::Bool(*value));
+        Instruction::Load { target, value } => {
+            ctx.set_value(*target, *value);
 
             InstructionFlow::Continue
         }
@@ -281,9 +269,9 @@ mod tests {
     fn test_load() {
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1234
+                    value: Value::Int(1234)
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
             ]),
@@ -292,13 +280,13 @@ mod tests {
 
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(2),
-                    value: 9
+                    value: Value::Int(9)
                 }),
-                I(Instruction::LoadBool {
+                I(Instruction::Load {
                     target: Variable(2),
-                    value: true
+                    value: Value::Bool(true)
                 }),
                 I(Instruction::Return(Some(Variable(2)))),
             ]),
@@ -310,13 +298,13 @@ mod tests {
     fn test_int_op() {
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1234
+                    value: Value::Int(1234)
                 }),
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(1),
-                    value: 8765
+                    value: Value::Int(8765)
                 }),
                 I(Instruction::IntOp {
                     operation: IntOperation::Add,
@@ -330,9 +318,9 @@ mod tests {
                     lhs: Variable(0),
                     rhs: Variable(1)
                 }),
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(2),
-                    value: 32
+                    value: Value::Int(32)
                 }),
                 I(Instruction::IntOp {
                     operation: IntOperation::Subtract,
@@ -359,13 +347,13 @@ mod tests {
 
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1234
+                    value: Value::Int(1234)
                 }),
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(1),
-                    value: 1235
+                    value: Value::Int(1235)
                 }),
                 I(Instruction::IntOp {
                     operation: IntOperation::LessThan,
@@ -380,13 +368,13 @@ mod tests {
 
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1235
+                    value: Value::Int(1235)
                 }),
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(1),
-                    value: 1235
+                    value: Value::Int(1235)
                 }),
                 I(Instruction::IntOp {
                     operation: IntOperation::LessThan,
@@ -404,14 +392,14 @@ mod tests {
     fn test_jump() {
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1
+                    value: Value::Int(1)
                 }),
                 I(Instruction::Jump(LabelId(1))),
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 2
+                    value: Value::Int(2)
                 }),
                 L, // 0
                 L, // 1
@@ -423,13 +411,13 @@ mod tests {
 
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1
+                    value: Value::Int(1)
                 }),
-                I(Instruction::LoadBool {
+                I(Instruction::Load {
                     target: Variable(1),
-                    value: true
+                    value: Value::Bool(true)
                 }),
                 I(Instruction::CondJump {
                     cond_var: Variable(1),
@@ -437,9 +425,9 @@ mod tests {
                     els: LabelId(0),
                 }),
                 L, // 0
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 2
+                    value: Value::Int(2)
                 }),
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
@@ -449,13 +437,13 @@ mod tests {
 
         assert_eq!(
             test_wrapper(&[
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 1
+                    value: Value::Int(1)
                 }),
-                I(Instruction::LoadBool {
+                I(Instruction::Load {
                     target: Variable(1),
-                    value: false
+                    value: Value::Bool(false)
                 }),
                 I(Instruction::CondJump {
                     cond_var: Variable(1),
@@ -463,9 +451,9 @@ mod tests {
                     els: LabelId(0),
                 }),
                 L, // 0
-                I(Instruction::LoadInt {
+                I(Instruction::Load {
                     target: Variable(0),
-                    value: 2
+                    value: Value::Int(2)
                 }),
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),

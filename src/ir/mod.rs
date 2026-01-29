@@ -6,6 +6,13 @@ pub mod interpreter;
 pub use builder::{FunctionBuilder, ModuleBuilder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Value {
+    Int(i64),
+    Bool(bool),
+    Unit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LabelId(u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,13 +78,9 @@ pub enum Instruction {
         lhs: Variable,
         rhs: Variable,
     },
-    LoadInt {
+    Load {
         target: Variable,
-        value: u64,
-    },
-    LoadBool {
-        target: Variable,
-        value: bool,
+        value: Value,
     },
     LoadUnit(Variable),
     Return(Option<Variable>),

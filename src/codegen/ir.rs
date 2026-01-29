@@ -2,7 +2,7 @@ use crate::{
     Builtin,
     ir::{
         self, BoolOperation, Function, FunctionBuilder, Instruction, IntOperation,
-        InternalFunction, ModuleBuilder, Variable,
+        InternalFunction, ModuleBuilder, Value, Variable,
     },
     scope::Scope,
     syntax::ast::{
@@ -146,9 +146,9 @@ impl FunctionCodegen<'_> {
 
         match unary.operator {
             UnaryOperator::Not => {
-                self.builder.emit_instruction(Instruction::LoadBool {
+                self.builder.emit_instruction(Instruction::Load {
                     target: temp,
-                    value: true,
+                    value: Value::Bool(true),
                 });
                 self.builder.emit_instruction(Instruction::BoolOp {
                     operation: BoolOperation::Xor,
@@ -158,9 +158,9 @@ impl FunctionCodegen<'_> {
                 });
             }
             UnaryOperator::Negate => {
-                self.builder.emit_instruction(Instruction::LoadInt {
+                self.builder.emit_instruction(Instruction::Load {
                     target: temp,
-                    value: 0,
+                    value: Value::Int(0),
                 });
                 self.builder.emit_instruction(Instruction::IntOp {
                     operation: IntOperation::Subtract,
@@ -196,9 +196,9 @@ impl FunctionCodegen<'_> {
             Primary::Bool(value) => {
                 let target = self.variable();
 
-                self.builder.emit_instruction(Instruction::LoadBool {
+                self.builder.emit_instruction(Instruction::Load {
                     target,
-                    value: *value,
+                    value: Value::Bool(*value),
                 });
 
                 target
@@ -206,9 +206,9 @@ impl FunctionCodegen<'_> {
             Primary::Integer(value) => {
                 let target = self.variable();
 
-                self.builder.emit_instruction(Instruction::LoadInt {
+                self.builder.emit_instruction(Instruction::Load {
                     target,
-                    value: *value,
+                    value: Value::Int(*value as i64),
                 });
 
                 target
@@ -302,9 +302,9 @@ impl FunctionCodegen<'_> {
                     els: eval_rhs,
                 });
                 self.builder.emit_label(short_circuit);
-                self.builder.emit_instruction(Instruction::LoadBool {
+                self.builder.emit_instruction(Instruction::Load {
                     target: tgt,
-                    value: true,
+                    value: Value::Bool(true),
                 });
                 self.builder.emit_instruction(Instruction::Jump(end));
                 self.builder.emit_label(eval_rhs);
@@ -318,9 +318,9 @@ impl FunctionCodegen<'_> {
                     els: short_circuit,
                 });
                 self.builder.emit_label(short_circuit);
-                self.builder.emit_instruction(Instruction::LoadBool {
+                self.builder.emit_instruction(Instruction::Load {
                     target: tgt,
-                    value: false,
+                    value: Value::Bool(false),
                 });
                 self.builder.emit_instruction(Instruction::Jump(end));
                 self.builder.emit_label(eval_rhs);
@@ -397,12 +397,7 @@ pub fn gen_ir(ast: &Ast, typmap: &TypMap, builtins: &[Builtin]) -> ir::Module {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        ir::interpreter::{Value, interpret},
-        stdlib,
-        syntax::parse,
-        types::typecheck,
-    };
+    use crate::{ir::Value, ir::interpreter::interpret, stdlib, syntax::parse, types::typecheck};
 
     use super::*;
 

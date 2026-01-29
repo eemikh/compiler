@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::{Builtin, ir::interpreter::Value, types::Typ};
+use crate::{Builtin, ir::Value, types::Typ};
 
 pub static BUILTINS: &[Builtin] = &[
     Builtin {
