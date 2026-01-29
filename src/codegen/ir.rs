@@ -123,13 +123,16 @@ impl FunctionCodegen<'_> {
             .map(|expr| self.gen_expression(expr))
             .collect();
 
+        let function = self.gen_expression(&expression.function);
+        let ret = self.variable();
+
         self.builder.emit_instruction(Instruction::Call {
-            function: todo!(),
+            function,
             parameters: params,
-            return_value: todo!(),
+            return_value: Some(ret),
         });
 
-        todo!()
+        ret
     }
 
     fn gen_var_expression(&mut self, expression: &VarExpression) -> Variable {

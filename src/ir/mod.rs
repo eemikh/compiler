@@ -9,6 +9,7 @@ pub use builder::{FunctionBuilder, ModuleBuilder};
 pub enum Value {
     Int(i64),
     Bool(bool),
+    Function(FunctionId),
     Unit,
 }
 
@@ -52,7 +53,7 @@ pub enum Instruction {
     /// Calls the function with the given parameters. The parameters are copied to variables 0, 1,
     /// ... in the scope of the target function.
     Call {
-        function: FunctionId,
+        function: Variable,
         parameters: Vec<Variable>,
         return_value: Option<Variable>,
     },

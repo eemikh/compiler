@@ -102,6 +102,13 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
             parameters,
             return_value,
         } => {
+            let fid = ctx.get_value(*function).unwrap();
+
+            let fid = match fid {
+                Value::Function(fid) => fid,
+                _ => panic!("tried to call non-function variable"),
+            };
+
             let mut variables = HashMap::new();
             for (i, variable) in parameters.iter().enumerate() {
                 variables.insert(
@@ -112,7 +119,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
 
             ctx.new_scope_from_variables(variables);
 
-            let value = call_function(ctx, *function);
+            let value = call_function(ctx, fid);
 
             ctx.remove_scope();
 
