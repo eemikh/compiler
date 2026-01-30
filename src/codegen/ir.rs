@@ -1,7 +1,7 @@
 use crate::{
     Builtin,
     ir::{
-        self, BoolOperation, Function, FunctionBuilder, Instruction, IntOperation,
+        self, BoolOperation, Function, FunctionBuilder, FunctionKind, Instruction, IntOperation,
         InternalFunction, ModuleBuilder, Value, Variable,
     },
     scope::Scope,
@@ -408,7 +408,10 @@ pub fn gen_ir(ast: &Ast, typmap: &TypMap, builtins: &[Builtin]) -> ir::Module {
         scope: Scope::new(),
     };
 
-    let function = Function::Internal(codegen.gen_body(&ast.root.body));
+    let function = Function {
+        name: String::from("main"),
+        kind: FunctionKind::Internal(codegen.gen_body(&ast.root.body)),
+    };
     let mut module = ModuleBuilder::new();
     let fid = module.function();
 

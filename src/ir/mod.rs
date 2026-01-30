@@ -94,9 +94,15 @@ pub struct InternalFunction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Function {
+pub enum FunctionKind {
     Internal(InternalFunction),
-    External(String),
+    External,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Function {
+    pub name: String,
+    pub kind: FunctionKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

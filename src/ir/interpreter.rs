@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     Builtin,
     ir::{
-        BoolOperation, Function, FunctionId, Instruction, IntOperation, InternalFunction, LabelId,
-        Module, Value, Variable,
+        BoolOperation, Function, FunctionId, FunctionKind, Instruction, IntOperation,
+        InternalFunction, LabelId, Module, Value, Variable,
     },
 };
 
@@ -61,8 +61,10 @@ pub fn interpret(module: &Module, builtins: &[Builtin]) -> Value {
             .functions
             .iter()
             .enumerate()
-            .filter_map(|(id, function)| match function {
-                Function::External(name) => Some((FunctionId(id.try_into().unwrap()), name)),
+            .filter_map(|(id, function)| match function.kind {
+                FunctionKind::External => {
+                    Some((FunctionId(id.try_into().unwrap()), &function.name))
+                }
                 _ => None,
             })
     {
@@ -91,11 +93,11 @@ pub fn interpret(module: &Module, builtins: &[Builtin]) -> Value {
 fn call_function(ctx: &mut Context, function: FunctionId, parameters: &[Variable]) -> Value {
     let f = ctx.module.get_function(function).unwrap();
 
-    match f {
-        Function::Internal(internal_function) => {
+    match &f.kind {
+        FunctionKind::Internal(internal_function) => {
             call_internal_function(ctx, internal_function, parameters)
         }
-        Function::External(_) => call_external_function(ctx, function, parameters),
+        FunctionKind::External => call_external_function(ctx, function, parameters),
     }
 }
 
@@ -290,7 +292,13 @@ mod tests {
             }
 
             let fid = builder.function();
-            builder.add_function(fid, Function::Internal(f.build()));
+            builder.add_function(
+                fid,
+                Function {
+                    name: format!("f{}", fid.0),
+                    kind: FunctionKind::Internal(f.build()),
+                },
+            );
         }
 
         builder.set_entry(FunctionId(0));

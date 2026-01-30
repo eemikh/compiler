@@ -94,7 +94,7 @@ impl ModuleBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::ir::Variable;
+    use crate::ir::{FunctionKind, Variable};
 
     use super::*;
 
@@ -140,17 +140,23 @@ mod tests {
         let mut builder = ModuleBuilder::new();
         let f1id = builder.function();
         let f2id = builder.function();
-        let f1 = Function::Internal(InternalFunction {
-            instructions: vec![],
-            labels: HashMap::new(),
-        });
-        let f2 = Function::Internal(InternalFunction {
-            instructions: vec![Instruction::Copy {
-                from: Variable(0),
-                to: Variable(1),
-            }],
-            labels: HashMap::new(),
-        });
+        let f1 = Function {
+            name: String::from("f1"),
+            kind: FunctionKind::Internal(InternalFunction {
+                instructions: vec![],
+                labels: HashMap::new(),
+            }),
+        };
+        let f2 = Function {
+            name: String::from("f2"),
+            kind: FunctionKind::Internal(InternalFunction {
+                instructions: vec![Instruction::Copy {
+                    from: Variable(0),
+                    to: Variable(1),
+                }],
+                labels: HashMap::new(),
+            }),
+        };
 
         builder.add_function(f2id, f2.clone());
         builder.add_function(f1id, f1.clone());
