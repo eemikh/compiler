@@ -57,7 +57,13 @@ impl FunctionCodegen<'_> {
 
         self.builder.emit_label(end);
 
-        self.unit()
+        let ret = self.variable();
+        self.builder.emit_instruction(Instruction::Load {
+            target: ret,
+            value: Value::Unit,
+        });
+
+        ret
     }
 
     fn gen_if_expression(&mut self, id: NodeId, expression: &IfExpression) -> Variable {
@@ -112,7 +118,15 @@ impl FunctionCodegen<'_> {
 
         match res {
             Some(res) => res,
-            None => self.unit(),
+            None => {
+                let unit = self.variable();
+                self.builder.emit_instruction(Instruction::Load {
+                    target: unit,
+                    value: Value::Unit,
+                });
+
+                unit
+            }
         }
     }
 
@@ -139,7 +153,13 @@ impl FunctionCodegen<'_> {
         let val = self.gen_expression(&expression.value);
         self.scope.create_variable(expression.name.clone(), val);
 
-        self.unit()
+        let ret = self.variable();
+        self.builder.emit_instruction(Instruction::Load {
+            target: ret,
+            value: Value::Unit,
+        });
+
+        ret
     }
 
     fn gen_unary(&mut self, unary: &UnaryExpression) -> Variable {
@@ -186,7 +206,15 @@ impl FunctionCodegen<'_> {
 
         let res = match &block.result_expression {
             Some(res_expr) => self.gen_expression(res_expr),
-            None => self.unit(),
+            None => {
+                let unit = self.variable();
+                self.builder.emit_instruction(Instruction::Load {
+                    target: unit,
+                    value: Value::Unit,
+                });
+
+                unit
+            }
         };
 
         self.scope.remove_scope();
@@ -370,23 +398,15 @@ impl FunctionCodegen<'_> {
 
         var
     }
-
-    fn unit(&self) -> Variable {
-        Variable(0)
-    }
 }
 
 pub fn gen_ir(ast: &Ast, typmap: &TypMap, builtins: &[Builtin]) -> ir::Module {
-    let mut codegen = FunctionCodegen {
+    let codegen = FunctionCodegen {
         builder: FunctionBuilder::new(),
         typmap,
         variables: 1,
         scope: Scope::new(),
     };
-
-    codegen
-        .builder
-        .emit_instruction(Instruction::LoadUnit(codegen.unit()));
 
     let function = Function::Internal(codegen.gen_body(&ast.root.body));
     let mut module = ModuleBuilder::new();

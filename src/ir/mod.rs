@@ -83,7 +83,6 @@ pub enum Instruction {
         target: Variable,
         value: Value,
     },
-    LoadUnit(Variable),
     Return(Option<Variable>),
 }
 

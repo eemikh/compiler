@@ -256,11 +256,6 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
 
             InstructionFlow::Continue
         }
-        Instruction::LoadUnit(variable) => {
-            ctx.set_value(*variable, Value::Unit);
-
-            InstructionFlow::Continue
-        }
         Instruction::Return(variable) => InstructionFlow::Return(*variable),
     }
 }
