@@ -14,10 +14,10 @@ pub enum Value {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LabelId(u32);
+pub struct LabelId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FunctionId(u32);
+pub struct FunctionId(pub u32);
 
 /// A reference to a variable. The reference is only valid for the function it was created in; using
 /// it in any other function may cause undesired behavior.
