@@ -1,4 +1,3 @@
-#![feature(assert_matches)]
 use std::env::args;
 
 use crate::{ir::Value, types::Typ};

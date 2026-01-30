@@ -458,8 +458,6 @@ pub fn parse<'code>(
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches::assert_matches;
-
     use crate::syntax::Span;
     use crate::syntax::token::TokenKind;
     use crate::syntax::token::tests::{Tok::*, token_vec};
@@ -479,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_literal() {
-        assert_matches!(
+        assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("true"), 4)])).parse_primary(),
             Some(Node {
                 id: NodeId(0),
@@ -488,7 +486,7 @@ mod tests {
             })
         );
 
-        assert_matches!(
+        assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Identifier("false"), 5)])).parse_primary(),
             Some(Node {
                 id: NodeId(0),
@@ -497,7 +495,7 @@ mod tests {
             })
         );
 
-        assert_matches!(
+        assert_eq!(
             quick_parser(&token_vec(&[T(TokenKind::Integer(1234), 4)])).parse_primary(),
             Some(Node {
                 id: NodeId(0),
