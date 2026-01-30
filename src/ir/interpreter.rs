@@ -19,7 +19,7 @@ enum InstructionFlow {
 struct Context<'a> {
     variables: Vec<HashMap<Variable, Value>>,
     module: &'a Module,
-    builtins: &'a [Builtin<'a>],
+    builtins: HashMap<FunctionId, fn(&[Value]) -> Value>,
 }
 
 impl Context<'_> {
@@ -54,34 +54,91 @@ impl Context<'_> {
 }
 
 pub fn interpret(module: &Module, builtins: &[Builtin]) -> Value {
+    let mut builtin_map = HashMap::new();
+
+    for (id, name) in
+        module
+            .functions
+            .iter()
+            .enumerate()
+            .filter_map(|(id, function)| match function {
+                Function::External(name) => Some((FunctionId(id.try_into().unwrap()), name)),
+                _ => None,
+            })
+    {
+        let function = builtins
+            .iter()
+            .find_map(|builtin| match builtin.name == name {
+                true => Some(builtin.function),
+                _ => None,
+            })
+            .unwrap();
+
+        builtin_map.insert(id, function);
+    }
+
     let mut ctx = Context {
         variables: Vec::new(),
         module,
-        builtins,
+        builtins: builtin_map,
     };
 
     ctx.new_scope();
 
-    call_function(&mut ctx, module.entry)
+    call_function(&mut ctx, module.entry, &[])
 }
 
-fn call_function(ctx: &mut Context, function: FunctionId) -> Value {
+fn call_function(ctx: &mut Context, function: FunctionId, parameters: &[Variable]) -> Value {
     let f = ctx.module.get_function(function).unwrap();
 
     match f {
-        Function::Internal(internal_function) => call_internal_function(ctx, internal_function),
-        Function::External(name) => todo!(),
+        Function::Internal(internal_function) => {
+            call_internal_function(ctx, internal_function, parameters)
+        }
+        Function::External(_) => call_external_function(ctx, function, parameters),
     }
 }
 
-fn call_internal_function(ctx: &mut Context, function: &InternalFunction) -> Value {
+fn call_external_function(
+    ctx: &mut Context,
+    function: FunctionId,
+    parameters: &[Variable],
+) -> Value {
+    let builtin = ctx.builtins.get(&function).unwrap();
+    let values: Vec<Value> = parameters
+        .iter()
+        .map(|variable| ctx.get_value(*variable).unwrap())
+        .collect();
+
+    builtin(&values)
+}
+
+fn call_internal_function(
+    ctx: &mut Context,
+    function: &InternalFunction,
+    parameters: &[Variable],
+) -> Value {
+    let mut variables = HashMap::new();
+    for (i, variable) in parameters.iter().enumerate() {
+        variables.insert(
+            Variable(i.try_into().unwrap()),
+            ctx.get_value(*variable).unwrap(),
+        );
+    }
+
+    ctx.new_scope_from_variables(variables);
+
     let mut pc = 0;
+    let mut ret = Value::Unit;
     while let Some(instruction) = function.instructions.get(pc) {
         let flow = execute_instruction(ctx, instruction);
 
         match flow {
-            InstructionFlow::Return(Some(var)) => return ctx.get_value(var).unwrap(),
-            InstructionFlow::Return(None) => return Value::Unit,
+            InstructionFlow::Return(Some(var)) => {
+                ret = ctx.get_value(var).unwrap();
+                break;
+            }
+            InstructionFlow::Return(None) => break,
             InstructionFlow::Jump(label_id) => {
                 pc = *function.labels.get(&label_id).unwrap();
                 continue;
@@ -92,7 +149,9 @@ fn call_internal_function(ctx: &mut Context, function: &InternalFunction) -> Val
         pc += 1;
     }
 
-    Value::Unit
+    ctx.remove_scope();
+
+    ret
 }
 
 fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> InstructionFlow {
@@ -109,19 +168,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
                 _ => panic!("tried to call non-function variable"),
             };
 
-            let mut variables = HashMap::new();
-            for (i, variable) in parameters.iter().enumerate() {
-                variables.insert(
-                    Variable(i.try_into().unwrap()),
-                    ctx.get_value(*variable).unwrap(),
-                );
-            }
-
-            ctx.new_scope_from_variables(variables);
-
-            let value = call_function(ctx, fid);
-
-            ctx.remove_scope();
+            let value = call_function(ctx, fid, parameters);
 
             if let Some(ret_var) = return_value {
                 ctx.set_value(*ret_var, value);
@@ -231,62 +278,69 @@ mod tests {
 
     use InstructionOrLabel::*;
 
-    fn build_module(instructions: &[InstructionOrLabel]) -> Module {
+    fn build_module(instructions: &[&[InstructionOrLabel]]) -> Module {
         let mut builder = ModuleBuilder::new();
-        let mut f = FunctionBuilder::new();
 
-        for i in instructions {
-            match i {
-                InstructionOrLabel::L => {
-                    let label = f.label();
-                    f.emit_label(label);
+        for instructions in instructions {
+            let mut f = FunctionBuilder::new();
+
+            for i in *instructions {
+                match i {
+                    InstructionOrLabel::L => {
+                        let label = f.label();
+                        f.emit_label(label);
+                    }
+                    InstructionOrLabel::I(instruction) => f.emit_instruction(instruction.clone()),
                 }
-                InstructionOrLabel::I(instruction) => f.emit_instruction(instruction.clone()),
             }
+
+            let fid = builder.function();
+            builder.add_function(fid, Function::Internal(f.build()));
         }
 
-        let fid = builder.function();
-        builder.add_function(fid, Function::Internal(f.build()));
-        builder.set_entry(fid);
+        builder.set_entry(FunctionId(0));
 
         builder.build()
     }
 
-    fn test_wrapper(instructions: &[InstructionOrLabel]) -> Value {
+    fn test_wrapper(instructions: &[&[InstructionOrLabel]]) -> Value {
         let module = build_module(instructions);
         let mut ctx = Context {
             variables: Vec::new(),
             module: &module,
-            builtins: &[],
+            builtins: HashMap::new(),
         };
 
         ctx.new_scope();
 
-        call_function(&mut ctx, module.entry)
+        call_function(&mut ctx, module.entry, &[])
     }
 
     #[test]
     fn test_return() {
-        assert_eq!(test_wrapper(&[I(Instruction::Return(None)),]), Value::Unit);
+        assert_eq!(
+            test_wrapper(&[&[I(Instruction::Return(None)),]]),
+            Value::Unit
+        );
 
-        assert_eq!(test_wrapper(&[]), Value::Unit);
+        assert_eq!(test_wrapper(&[&[]]), Value::Unit);
     }
 
     #[test]
     fn test_load() {
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1234)
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Int(1234)
         );
 
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(2),
                     value: Value::Int(9)
@@ -296,7 +350,7 @@ mod tests {
                     value: Value::Bool(true)
                 }),
                 I(Instruction::Return(Some(Variable(2)))),
-            ]),
+            ]]),
             Value::Bool(true)
         );
     }
@@ -304,7 +358,7 @@ mod tests {
     #[test]
     fn test_int_op() {
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1234)
@@ -348,12 +402,12 @@ mod tests {
                     rhs: Variable(2)
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Int(3)
         );
 
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1234)
@@ -369,12 +423,12 @@ mod tests {
                     rhs: Variable(1)
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Bool(true)
         );
 
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1235)
@@ -390,7 +444,7 @@ mod tests {
                     rhs: Variable(1)
                 }),
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Bool(false)
         );
     }
@@ -398,7 +452,7 @@ mod tests {
     #[test]
     fn test_jump() {
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1)
@@ -412,12 +466,12 @@ mod tests {
                 L, // 1
                 L, // 2
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Int(1)
         );
 
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1)
@@ -438,12 +492,12 @@ mod tests {
                 }),
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Int(1)
         );
 
         assert_eq!(
-            test_wrapper(&[
+            test_wrapper(&[&[
                 I(Instruction::Load {
                     target: Variable(0),
                     value: Value::Int(1)
@@ -464,8 +518,90 @@ mod tests {
                 }),
                 L, // 1
                 I(Instruction::Return(Some(Variable(0)))),
-            ]),
+            ]]),
             Value::Int(2)
+        );
+    }
+
+    #[test]
+    fn test_fun() {
+        assert_eq!(
+            test_wrapper(&[
+                &[
+                    I(Instruction::Load {
+                        target: Variable(0),
+                        value: Value::Function(FunctionId(1))
+                    }),
+                    I(Instruction::Call {
+                        function: Variable(0),
+                        parameters: vec![],
+                        return_value: Some(Variable(0)),
+                    }),
+                    I(Instruction::Return(Some(Variable(0)))),
+                ],
+                &[]
+            ]),
+            Value::Unit
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                &[
+                    I(Instruction::Load {
+                        target: Variable(0),
+                        value: Value::Function(FunctionId(1))
+                    }),
+                    I(Instruction::Call {
+                        function: Variable(0),
+                        parameters: vec![],
+                        return_value: Some(Variable(7)),
+                    }),
+                    I(Instruction::Return(Some(Variable(7)))),
+                ],
+                &[
+                    I(Instruction::Load {
+                        target: Variable(0),
+                        value: Value::Int(1234),
+                    }),
+                    I(Instruction::Return(Some(Variable(0)))),
+                ]
+            ]),
+            Value::Int(1234)
+        );
+
+        assert_eq!(
+            test_wrapper(&[
+                &[
+                    I(Instruction::Load {
+                        target: Variable(0),
+                        value: Value::Function(FunctionId(1))
+                    }),
+                    I(Instruction::Load {
+                        target: Variable(1),
+                        value: Value::Int(832)
+                    }),
+                    I(Instruction::Load {
+                        target: Variable(2),
+                        value: Value::Int(22)
+                    }),
+                    I(Instruction::Call {
+                        function: Variable(0),
+                        parameters: vec![Variable(1), Variable(2)],
+                        return_value: Some(Variable(7)),
+                    }),
+                    I(Instruction::Return(Some(Variable(7)))),
+                ],
+                &[
+                    I(Instruction::IntOp {
+                        operation: IntOperation::Add,
+                        target: Variable(2),
+                        lhs: Variable(0),
+                        rhs: Variable(1)
+                    }),
+                    I(Instruction::Return(Some(Variable(2)))),
+                ]
+            ]),
+            Value::Int(854)
         );
     }
 }
