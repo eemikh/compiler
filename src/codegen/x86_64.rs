@@ -1,8 +1,9 @@
 use std::fmt::Write;
 
-use crate::ir::{BoolOperation, Instruction, IntOperation, LabelId, Value, Variable};
+use crate::ir::{BoolOperation, Instruction, IntOperation, LabelId, Module, Value, Variable};
 
-struct Context<W: Write> {
+struct Context<'a, W: Write> {
+    module: &'a Module,
     writer: W,
     indent: usize,
 }
@@ -208,7 +209,15 @@ fn gen_load<W: Write>(ctx: &mut Context<W>, target: Variable, value: &Value) {
 
             emit!(ctx, "movq ${}, {}(%rbp)", value, rbp_offset(target));
         }
-        Value::Function(function_id) => todo!(),
+        Value::Function(function_id) => {
+            emit!(
+                ctx,
+                "leaq {}(%rip), %rax",
+                ctx.module.functions[usize::try_from(function_id.0).unwrap()].name
+            );
+            emit!(ctx, "movq %rax, {}(%rbp)", rbp_offset(target));
+            emit!(ctx, "callq *%rax");
+        }
         Value::Unit => {}
     }
 }
