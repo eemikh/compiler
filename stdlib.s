@@ -28,9 +28,8 @@ print_int:
 
     .Lnot_zero:
     movq %rdi, %rax
-    movq %rdi, %rcx
-    negq %rcx
-    cmovns %rcx, %rax
+    negq %rax
+    cmovs %rdi, %rax
     movl $10, %ecx
 
     .Lloop:
