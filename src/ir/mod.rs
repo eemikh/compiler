@@ -21,7 +21,7 @@ pub struct FunctionId(pub u32);
 
 /// A reference to a variable. The reference is only valid for the function it was created in; using
 /// it in any other function may cause undesired behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Variable(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

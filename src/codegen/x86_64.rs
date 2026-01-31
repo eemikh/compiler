@@ -1,14 +1,18 @@
 use std::fmt::Write;
 
-use crate::ir::{
-    BoolOperation, FunctionKind, Instruction, IntOperation, InternalFunction, LabelId, Module,
-    Value, Variable,
+use crate::{
+    codegen::analysis::function_max_variable,
+    ir::{
+        BoolOperation, FunctionKind, Instruction, IntOperation, InternalFunction, LabelId, Module,
+        Value, Variable,
+    },
 };
 
 struct Context<'a, W: Write> {
     module: &'a Module,
     writer: W,
     indent: usize,
+    stack_size: u32,
 }
 
 macro_rules! emit {
@@ -17,7 +21,9 @@ macro_rules! emit {
     }};
     ($ctx:expr, $($arg:tt)*) => {{
         let indent = $ctx.indent;
-        ::std::write!($ctx.writer, "{:1$}", " ", indent).unwrap();
+        if indent != 0 {
+            ::std::write!($ctx.writer, "{:1$}", " ", indent).unwrap();
+        }
         ::std::write!($ctx.writer, $($arg)*).unwrap();
         ::std::write!($ctx.writer, "\n").unwrap();
     }};
@@ -39,6 +45,7 @@ pub fn gen_module<W: Write>(module: &Module, writer: W) {
         module,
         writer,
         indent: 0,
+        stack_size: 0,
     };
 
     for function in &module.functions {
@@ -53,9 +60,25 @@ pub fn gen_module<W: Write>(module: &Module, writer: W) {
 }
 
 fn gen_function<W: Write>(ctx: &mut Context<W>, function: &InternalFunction) {
+    let mut stack_size = rbp_offset(function_max_variable(function)).unsigned_abs();
+    dbg!(function);
+
+    if !stack_size.is_multiple_of(16) {
+        stack_size += 8;
+    }
+
+    ctx.stack_size = stack_size;
+
+    emit!(ctx, "pushq %rbp");
+    emit!(ctx, "movq %rsp, %rbp");
+    emit!(ctx, "subq ${}, %rsp", stack_size);
+
     for instruction in &function.instructions {
         gen_instruction(ctx, instruction);
     }
+
+    gen_epilogue(ctx);
+    emit!(ctx, "ret");
 }
 
 fn gen_instruction<W: Write>(ctx: &mut Context<W>, instruction: &Instruction) {
@@ -88,8 +111,6 @@ fn gen_instruction<W: Write>(ctx: &mut Context<W>, instruction: &Instruction) {
         Instruction::Return(variable) => gen_return(ctx, *variable),
         Instruction::Label(label_id) => gen_label(ctx, *label_id),
     }
-
-    emit!(ctx);
 }
 
 fn gen_label<W: Write>(ctx: &mut Context<W>, label: LabelId) {
@@ -257,10 +278,17 @@ fn gen_load<W: Write>(ctx: &mut Context<W>, target: Variable, value: &Value) {
     }
 }
 
+fn gen_epilogue<W: Write>(ctx: &mut Context<W>) {
+    emit!(ctx, "addq ${}, %rsp", ctx.stack_size);
+    emit!(ctx, "movq %rbp, %rsp");
+    emit!(ctx, "popq %rbp");
+}
+
 fn gen_return<W: Write>(ctx: &mut Context<W>, variable: Option<Variable>) {
     if let Some(variable) = variable {
         emit!(ctx, "movq {}(%rbp), %rax", rbp_offset(variable));
     }
 
+    gen_epilogue(ctx);
     emit!(ctx, "ret");
 }
