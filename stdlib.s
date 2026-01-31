@@ -170,8 +170,7 @@ print_int:
     testq %rdi, %rdi
     jns .Lprint
     decq %rsi
-    movb $'-', %dl
-    movb %dl, (%rsi)
+    movb $'-', (%rsi)
 
     .Lprint:
     movl $1, %eax
