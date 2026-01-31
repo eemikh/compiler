@@ -35,6 +35,7 @@ impl FunctionBuilder {
             .labels
             .insert(label, self.function.instructions.len())
             .is_some();
+        self.function.instructions.push(Instruction::Label(label));
 
         assert!(!had_label);
     }
@@ -120,8 +121,13 @@ mod tests {
         assert_eq!(
             builder.build(),
             InternalFunction {
-                instructions: vec![i1, i2],
-                labels: HashMap::from([(LabelId(0), 1), (LabelId(1), 2)])
+                instructions: vec![
+                    i1,
+                    Instruction::Label(LabelId(0)),
+                    i2,
+                    Instruction::Label(LabelId(1))
+                ],
+                labels: HashMap::from([(LabelId(0), 1), (LabelId(1), 3)])
             }
         );
     }

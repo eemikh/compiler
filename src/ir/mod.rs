@@ -84,6 +84,7 @@ pub enum Instruction {
         value: Value,
     },
     Return(Option<Variable>),
+    Label(LabelId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

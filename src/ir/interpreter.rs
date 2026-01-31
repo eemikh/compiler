@@ -259,6 +259,7 @@ fn execute_instruction(ctx: &mut Context, instruction: &Instruction) -> Instruct
             InstructionFlow::Continue
         }
         Instruction::Return(variable) => InstructionFlow::Return(*variable),
+        Instruction::Label(_) => InstructionFlow::Continue,
     }
 }
 
