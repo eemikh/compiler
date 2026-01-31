@@ -1,6 +1,11 @@
-use std::env::args;
+use std::{env::args, fs::File, io::Read};
 
-use crate::{ir::Value, types::Typ};
+use crate::{
+    codegen::{gen_ir, gen_module},
+    ir::Value,
+    syntax::parse,
+    types::{Typ, typecheck},
+};
 
 mod codegen;
 mod ir;
@@ -20,5 +25,14 @@ pub struct Builtin<'a> {
 
 fn main() {
     let mut args = args();
-    println!("{}", args.nth(1).unwrap());
+    let mut f = File::open(args.nth(1).unwrap()).unwrap();
+    let mut code = String::new();
+    f.read_to_string(&mut code).unwrap();
+
+    let ast = parse(&code).0.unwrap();
+    let typmap = typecheck(&ast, stdlib::BUILTINS).unwrap();
+    let ir = gen_ir(&ast, &typmap, stdlib::BUILTINS);
+    let mut res = String::new();
+    gen_module(&ir, &mut res);
+    print!("{}", res);
 }
