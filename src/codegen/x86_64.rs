@@ -1,6 +1,9 @@
 use std::fmt::Write;
 
-use crate::ir::{BoolOperation, Instruction, IntOperation, LabelId, Module, Value, Variable};
+use crate::ir::{
+    BoolOperation, FunctionKind, Instruction, IntOperation, InternalFunction, LabelId, Module,
+    Value, Variable,
+};
 
 struct Context<'a, W: Write> {
     module: &'a Module,
@@ -9,13 +12,14 @@ struct Context<'a, W: Write> {
 }
 
 macro_rules! emit {
-    ($expression:expr) => {{
-        ::std::write!($expression.writer, "\n").unwrap();
+    ($ctx:expr) => {{
+        ::std::write!($ctx.writer, "\n").unwrap();
     }};
-    ($expression:expr, $($arg:tt)*) => {{
-        ::std::write!($expression.writer, "{:1$}", " ", $expression.indent).unwrap();
-        ::std::write!($expression.writer, $($arg)*).unwrap();
-        ::std::write!($expression.writer, "\n").unwrap();
+    ($ctx:expr, $($arg:tt)*) => {{
+        let indent = $ctx.indent;
+        ::std::write!($ctx.writer, "{:1$}", " ", indent).unwrap();
+        ::std::write!($ctx.writer, $($arg)*).unwrap();
+        ::std::write!($ctx.writer, "\n").unwrap();
     }};
 
 }
@@ -28,6 +32,30 @@ macro_rules! emit {
 
 fn rbp_offset(variable: Variable) -> i32 {
     -8 * i32::try_from(variable.0 + 1).unwrap()
+}
+
+pub fn gen_module<W: Write>(module: &Module, writer: W) {
+    let mut ctx = Context {
+        module,
+        writer,
+        indent: 0,
+    };
+
+    for function in &module.functions {
+        if let FunctionKind::Internal(internal_function) = &function.kind {
+            emit!(&mut ctx, "{}:", function.name);
+
+            ctx.indent += 4;
+            gen_function(&mut ctx, internal_function);
+            ctx.indent -= 4;
+        }
+    }
+}
+
+fn gen_function<W: Write>(ctx: &mut Context<W>, function: &InternalFunction) {
+    for instruction in &function.instructions {
+        gen_instruction(ctx, instruction);
+    }
 }
 
 fn gen_instruction<W: Write>(ctx: &mut Context<W>, instruction: &Instruction) {
@@ -58,7 +86,14 @@ fn gen_instruction<W: Write>(ctx: &mut Context<W>, instruction: &Instruction) {
         } => gen_bool_op(ctx, *operation, *target, *lhs, *rhs),
         Instruction::Load { target, value } => gen_load(ctx, *target, value),
         Instruction::Return(variable) => gen_return(ctx, *variable),
+        Instruction::Label(label_id) => gen_label(ctx, *label_id),
     }
+
+    emit!(ctx);
+}
+
+fn gen_label<W: Write>(ctx: &mut Context<W>, label: LabelId) {
+    emit!(ctx, ".L{}:", label.0);
 }
 
 fn gen_call<W: Write>(
